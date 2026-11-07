@@ -43,12 +43,15 @@ for (const w of K.weeks) {
 // 情景对话库
 {
   let md = BANNER + `# 情景对话库（${K.scenes.length} 个日常场景）\n\n课程之外的日常生活全场景。每个都先听、再跟读、再分角色扮演。App 里「情景库」可以直接角色扮演并打分。\n\n`;
-  const cats = [...new Set(K.scenes.map((s) => s.cat))];
-  md += cats.map((c) => `- **${c}**：${K.scenes.filter((s) => s.cat === c).map((s) => s.title).join('、')}`).join('\n') + '\n\n';
+  const catOrder = K.sceneCatOrder || [];
+  const cats = catOrder.concat([...new Set(K.scenes.map((s) => s.cat))].filter((c) => !catOrder.includes(c))).filter((c) => K.scenes.some((s) => s.cat === c));
+  const SC = K.scenes.slice().sort((a, b) => cats.indexOf(a.cat) - cats.indexOf(b.cat) || (+a.id.slice(1)) - (+b.id.slice(1)));
+  const no = (s) => String(SC.indexOf(s) + 1).padStart(3, '0');
+  md += cats.map((c) => { const ss = SC.filter((s) => s.cat === c); return `- **${c}**（${no(ss[0])}–${no(ss[ss.length - 1])}）：${ss.map((s) => s.title).join('、')}`; }).join('\n') + '\n\n';
   for (const c of cats) {
     md += `---\n\n## ${c}\n\n`;
-    for (const s of K.scenes.filter((x) => x.cat === c)) {
-      md += `### ${s.id.slice(1)}. ${s.title}\n\n`;
+    for (const s of SC.filter((x) => x.cat === c)) {
+      md += `### ${no(s)}. ${s.title}\n\n`;
       for (const [r, ko, zh] of s.lines) md += `- **${s.roles[r]}**：${ko}  \n  <sub>${zh}</sub>\n`;
       md += '\n';
     }

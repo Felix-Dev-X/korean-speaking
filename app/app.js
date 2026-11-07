@@ -18,7 +18,10 @@
   const UNITS_OF_WEEK = (w) => UNITS.filter((u) => u.week === w);
   const lessonNo = (u) => pad(UNITS.indexOf(u) + 1);
   const WEEKS = K.weeks.slice().sort((a, b) => a.week - b.week);
-  const SCENES = (K.scenes || []).slice().sort((a, b) => a.id.localeCompare(b.id));
+  // 情景：先按分类（order.js 的 sceneCatOrder），同类按编号数字排；显示编号 001–160
+  const SCENE_CATS = (K.sceneCatOrder || []).concat([...new Set((K.scenes || []).map((s) => s.cat))].filter((c) => !(K.sceneCatOrder || []).includes(c)));
+  const SCENES = (K.scenes || []).slice().sort((a, b) => SCENE_CATS.indexOf(a.cat) - SCENE_CATS.indexOf(b.cat) || (+a.id.slice(1)) - (+b.id.slice(1)));
+  const sceneNo = (s) => String(SCENES.indexOf(s) + 1).padStart(3, '0');
   const PASSAGES = (K.shadowing || []).slice().sort((a, b) => a.id.localeCompare(b.id));
   const QA = (K.qa || []).flatMap((c, ci) => c.items.map((it, i) => ({ id: 'q' + ci + '-' + i, cat: c.cat, ci, q: it[0], qzh: it[1], a: it[2], azh: it[3] })));
   const TOTAL_DAYS = WEEKS.length * 7;
@@ -1072,23 +1075,29 @@
 
   /* ═════════════ 情景库 ═════════════ */
   function viewScenes(cat) {
-    const cats = Array.from(new Set(SCENES.map((s) => s.cat)));
+    const cats = SCENE_CATS.filter((c) => SCENES.some((s) => s.cat === c));
     const sel = cat != null && cats[+cat] ? cats[+cat] : '';
-    const list = SCENES.filter((s) => !sel || s.cat === sel);
+    const item = (s) => `<a class="unit-item ${S.scenesDone[s.id] ? 'done' : ''}" href="#scene-${s.id}">
+        <span class="u-no">${sceneNo(s)}</span><span class="u-t"><b>${esc(s.title)}</b><small>你扮演 ${esc(s.roles[s.me])}</small></span>
+        <span class="u-s">${S.scenesDone[s.id] ? '✅' : '›'}</span></a>`;
+    const groups = (sel ? [sel] : cats).map((c) => {
+      const ss = SCENES.filter((s) => s.cat === c);
+      const done = ss.filter((s) => S.scenesDone[s.id]).length;
+      return `<section class="scene-group"><h2 class="sec-title">${esc(c)} <small class="muted">${sceneNo(ss[0])}–${sceneNo(ss[ss.length - 1])} · ${ss.length} 个${done ? ` · 已练 ${done}` : ''}</small></h2>
+        <div class="unit-list">${ss.map(item).join('')}</div></section>`;
+    }).join('');
     setView(`<h1 class="page-title">情景对话库 <small>${SCENES.length} 个日常场景</small></h1>
       <div class="tip card">课程之外的日常生活全场景：健身房、洗衣店、搬家、外卖、市场砍价、入境、失物、面试、开会、请假、KTV、汗蒸房、牙科、119……每个都能角色扮演。</div>
       <div class="chips filter"><a class="chip ${!sel ? 'on' : ''}" href="#scenes">全部</a>${cats.map((c, ci) => `<a class="chip ${sel === c ? 'on' : ''}" href="#scenes-${ci}">${esc(c)}</a>`).join('')}</div>
-      <div class="unit-list">${list.map((s) => `<a class="unit-item ${S.scenesDone[s.id] ? 'done' : ''}" href="#scene-${s.id}">
-        <span class="u-no">${esc(s.id.slice(1))}</span><span class="u-t"><b>${esc(s.title)}</b><small>${esc(s.cat)} · 你扮演 ${esc(s.roles[s.me])}</small></span>
-        <span class="u-s">${S.scenesDone[s.id] ? '✅' : '›'}</span></a>`).join('')}</div>`);
+      ${groups}`);
   }
   function viewScene(id) {
     const s = SCENES.find((x) => x.id === id) || SCENES[0];
     const i = SCENES.indexOf(s);
-    const el = setView(`<div class="eyebrow">情景库 · ${esc(s.cat)}</div><h1 class="page-title">${esc(s.title)}</h1><div class="rp"></div>
+    const el = setView(`<div class="eyebrow">情景库 · ${esc(s.cat)} · 第 ${sceneNo(s)} 个</div><h1 class="page-title">${esc(s.title)}</h1><div class="rp"></div>
       <div class="unit-foot"><div class="nav-units">
         ${i > 0 ? `<a class="btn ghost" href="#scene-${SCENES[i - 1].id}">‹ 上一个</a>` : ''}
-        <a class="btn ghost" href="#scenes">全部情景</a>
+        <a class="btn ghost" href="#scenes-${SCENE_CATS.filter((c) => SCENES.some((x) => x.cat === c)).indexOf(s.cat)}">本类情景</a>
         ${i < SCENES.length - 1 ? `<a class="btn ghost" href="#scene-${SCENES[i + 1].id}">下一个 ›</a>` : ''}
       </div></div>`);
     onLeave(rolePlay($('.rp', el), { roles: s.roles, me: s.me, lines: s.lines, scene: '' }, () => { S.scenesDone[s.id] = (S.scenesDone[s.id] || 0) + 1; save(); }));

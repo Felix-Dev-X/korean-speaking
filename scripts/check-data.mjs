@@ -22,6 +22,7 @@ for (const w of K.weeks) {
 const ord = K.unitOrder || [];
 if (ord.length !== K.units.length || new Set(ord).size !== ord.length) err('课程顺序表（order.js）和课程数量不一致或有重复');
 for (const id of ord) { const u = K.units.find((x) => x.id === id); if (!u) err('顺序表里有不存在的课：' + id); else if (u.week !== Math.floor(ord.indexOf(id) / 5) + 1) err(id + ' 在顺序表里的位置和它的周数不一致'); }
+for (const s of K.scenes) if (!(K.sceneCatOrder || []).includes(s.cat)) err(s.id + ' 的分类不在 sceneCatOrder 里：' + s.cat);
 const sids = new Set();
 for (const s of K.scenes) {
   if (sids.has(s.id)) err('重复的情景 id ' + s.id); sids.add(s.id);
