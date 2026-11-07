@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const DATA_DIR = path.join(here, '..', 'app', 'data');
-export const FILES = ['week1-2', 'week3-4', 'week5-6', 'week7-8', 'week9-10', 'week11-12', 'scenes-1', 'scenes-2', 'scenes-3', 'scenes-4', 'phrasebank', 'phrasebank-2', 'shadowing', 'pronunciation', 'ai-scenarios'];
+export const FILES = ['week1-2', 'week3-4', 'week5-6', 'week7-8', 'week9-10', 'week11-12', 'week13-14', 'week15-16', 'scenes-1', 'scenes-2', 'scenes-3', 'scenes-4', 'scenes-5', 'phrasebank', 'phrasebank-2', 'phrasebank-3', 'shadowing', 'shadowing-2', 'qa', 'pronunciation', 'pronunciation-2', 'ai-scenarios'];
 
 export function loadKSS() {
   const ctx = {};

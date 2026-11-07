@@ -31,6 +31,8 @@ for (const p of K.shadowing || []) {
   if (!p.sentences || p.sentences.length < 5) err(p.id + ' 句子太少');
   for (const x of p.sentences) if (!x[0] || !x[1]) err(p.id + ' 句子缺字段');
 }
+for (const c of K.qa || []) for (const it of c.items) if (it.length < 4 || it.some((x) => !x)) err('百问百答缺字段：' + it[0]);
+for (const r of K.pronunciation) if (!r.examples.length || !r.sentence || r.sentence.length < 3) err('发音规则缺字段：' + r.title);
 const aids = new Set();
 for (const a of K.aiScenarios) { if (aids.has(a.id)) err('重复的 AI 情景 id ' + a.id); aids.add(a.id); }
 for (const a of K.aiScenarios) if (!['jon', 'ban', 'ai-ban'].includes(a.speech)) err(a.id + ' speech 无效');
@@ -43,6 +45,7 @@ console.log({
   情景: K.scenes.length, 情景对话行: count(K.scenes, (s) => s.lines.length),
   功能句: count(K.phrasebank, (c) => c.items.length), 句库分类: K.phrasebank.length,
   短文: (K.shadowing || []).length, 短文句子: count(K.shadowing || [], (p) => p.sentences.length),
+  百问百答: count(K.qa || [], (c) => c.items.length),
   发音规则: K.pronunciation.length, AI情景: K.aiScenarios.length,
 });
 if (errors) { console.error(errors + ' 个问题'); process.exit(1); } else console.log('✓ 数据检查通过');

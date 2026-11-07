@@ -85,6 +85,18 @@ for (const w of K.weeks) {
   fs.writeFileSync(path.join(out, 'shadowing.md'), md);
 }
 
+// 百问百答
+{
+  const n = K.qa.reduce((a, c) => a + c.items.length, 0);
+  let md = BANNER + `# 百问百答：韩国人最常问你的 ${n} 个问题\n\n用法：遮住参考回答，听（读）问题后 5 秒内用自己的情况回答 → 对照参考回答 → 跟读 → 改成你自己的版本再说一遍。\n\n`;
+  for (const c of K.qa) {
+    md += `## ${c.cat}\n\n| 问题 | 参考回答 |\n|---|---|\n`;
+    for (const [q, qzh, a, azh] of c.items) md += `| ${cell(q)}<br><sub>${cell(qzh)}</sub> | ${cell(a)}<br><sub>${cell(azh)}</sub> |\n`;
+    md += '\n';
+  }
+  fs.writeFileSync(path.join(out, 'qa.md'), md);
+}
+
 // AI 陪练提示词
 {
   let md = BANNER + `# AI 陪练提示词\n\n没有 API Key 也能用：把下面任意一段提示词完整复制，粘贴到 Claude App（或网页版）的新对话里，然后打开**语音模式**直接说韩语。\n\n> 语音模式下如果它不输出 \`<reply>\`/\`<feedback>\` 标签也没关系，你也可以加一句"语音模式下先用韩语回复，再用中文简短纠错"。\n\n`;

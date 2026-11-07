@@ -14,7 +14,8 @@
   const UNITS = K.units.slice().sort((a, b) => a.id.localeCompare(b.id));
   const WEEKS = K.weeks.slice().sort((a, b) => a.week - b.week);
   const SCENES = (K.scenes || []).slice().sort((a, b) => a.id.localeCompare(b.id));
-  const PASSAGES = (K.shadowing || []).slice();
+  const PASSAGES = (K.shadowing || []).slice().sort((a, b) => a.id.localeCompare(b.id));
+  const QA = (K.qa || []).flatMap((c, ci) => c.items.map((it, i) => ({ id: 'q' + ci + '-' + i, cat: c.cat, ci, q: it[0], qzh: it[1], a: it[2], azh: it[3] })));
   const TOTAL_DAYS = WEEKS.length * 7;
   const SDK_URL = 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.0.0/+esm';
   const MODELS = [
@@ -87,6 +88,7 @@
     log: {},           // { 'YYYY-MM-DD': { sec, reps } }
     scenesDone: {},    // { sceneId: count }
     shadowDone: {},    // { passageId: 'YYYY-MM-DD' }
+    qaDone: {},        // { qaId: count }
     settings: { rate: 1, voiceURI: '', autoListen: true, apiKey: '', model: 'claude-opus-5-5', correction: true },
   });
   function load() {
@@ -580,7 +582,7 @@
     const arg = m[2];
     const R = {
       '': viewHome, units: viewUnits, unit: viewUnit, day: viewDay, review: viewReview,
-      scenes: viewScenes, scene: viewScene, phrases: viewPhrases, pron: viewPron, shadow: viewShadow,
+      scenes: viewScenes, scene: viewScene, phrases: viewPhrases, pron: viewPron, shadow: viewShadow, qa: viewQA,
       ai: viewAI, prefs: viewSettings,
     };
     markNav(name === 'unit' || name === 'day' ? 'units' : name === 'scene' ? 'scenes' : name);
@@ -712,7 +714,7 @@
         r.nextElementSibling.textContent = r.value;
       }));
     } else {
-      const recs = K.aiScenarios.filter((s) => ({ 1: ['free-jon', 'friend-new'], 2: ['cafe', 'restaurant', 'taxi'], 3: ['friend-new', 'coworker'], 4: ['free-ban'], 5: ['professor', 'senior', 'phone'], 6: ['free-jon', 'interview'], 7: ['realestate', 'doctor', 'phone'], 8: ['halmeoni', 'date', 'complaint'], 9: ['parents', 'free-jon'], 10: ['debate', 'friend-new'], 11: ['classmate', 'secondhand', 'complaint'], 12: ['interview-hard', 'busan', 'free-ban'] }[info.w] || ['free-jon']).includes(s.id));
+      const recs = K.aiScenarios.filter((s) => ({ 1: ['free-jon', 'friend-new'], 2: ['cafe', 'restaurant', 'taxi'], 3: ['friend-new', 'coworker'], 4: ['free-ban'], 5: ['professor', 'senior', 'phone'], 6: ['free-jon', 'interview'], 7: ['realestate', 'doctor', 'phone'], 8: ['halmeoni', 'date', 'complaint'], 9: ['parents', 'free-jon'], 10: ['debate', 'friend-new'], 11: ['classmate', 'secondhand', 'complaint'], 12: ['interview-hard', 'busan', 'free-ban'], 13: ['free-jon', 'friend-new'], 14: ['debate', 'free-ban'], 15: ['classmate', 'trainer'], 16: ['interview-hard', 'doctor', 'free-jon'] }[info.w] || ['free-jon']).includes(s.id));
       el = setView(`${head}<h1 class="page-title">自由对话日</h1>
         <section class="card"><p>今天不学新东西。<b>至少 20 分钟</b>不间断的对话：首选真人（语言交换、韩国朋友、店员闲聊），没有真人就用 AI 陪练。把这周学的句块全部用出来。</p>
           <h3>推荐的 AI 陪练情景</h3>
@@ -1137,6 +1139,76 @@
     $('.retell', el).appendChild(rec);
     onLeave(() => { run++; rec.cleanup(); });
     $('.done-p', el).onclick = () => { S.shadowDone[p.id] = today(); save(); toast('这篇完成了！'); location.hash = '#shadow'; };
+  }
+
+  /* ═════════════ 百问百答 ═════════════ */
+  function viewQA(cat) {
+    const cats = (K.qa || []).map((c) => c.cat);
+    const ci = cat != null && cats[+cat] ? +cat : -1;
+    const pool = QA.filter((x) => ci < 0 || x.ci === ci);
+    const doneN = QA.filter((x) => S.qaDone[x.id]).length;
+    const el = setView(`<h1 class="page-title">百问百答 <small>韩国人最常问你的 ${QA.length} 个问题</small></h1>
+      <div class="tip card">听问题 → <b>5 秒内用你自己的情况回答</b>（说出来！）→ 看参考答案 → 跟读参考答案 → 把参考答案改成你自己的版本再说一遍。已练过 ${doneN} / ${QA.length} 题。</div>
+      <div class="chips filter"><a class="chip ${ci < 0 ? 'on' : ''}" href="#qa">全部</a>${cats.map((c, i) => `<a class="chip ${ci === i ? 'on' : ''}" href="#qa-${i}">${esc(c)}</a>`).join('')}</div>
+      <div class="toolbar">
+        <button class="btn primary big qa-start">▶ 开始随机问答（${pool.length} 题）</button>
+        <label class="switch"><input type="checkbox" class="qa-zh" id="qa-show-zh"> 显示问题的中文</label>
+      </div>
+      <div class="qa-box card hidden"></div>
+      <h2 class="sec-title">全部问题</h2>
+      <div class="qa-list"></div>`);
+    const box = $('.qa-box', el), list = $('.qa-list', el);
+    pool.forEach((x) => {
+      const row = h(`<details class="card qa-item"><summary><span class="ko" lang="ko">${esc(x.q)}</span><span class="zh">${esc(x.qzh)}</span>${S.qaDone[x.id] ? ' <em>✓</em>' : ''}</summary>
+        <div class="qa-ans"><div class="ko" lang="ko">${esc(x.a)}</div><div class="zh">${esc(x.azh)}</div><div class="acts"></div></div></details>`);
+      $('.acts', row).appendChild(speakBtn(x.q, '▶ 问题'));
+      $('.acts', row).appendChild(speakBtn(x.a, '▶ 参考回答'));
+      row.addEventListener('toggle', () => { if (row.open && !$('.check', row)) $('.qa-ans', row).appendChild(speakCheck(x.a)); });
+      list.appendChild(row);
+    });
+    let queue = [], idx = 0, alive = true;
+    onLeave(() => { alive = false; });
+    function render() {
+      if (!alive) return;
+      if (idx >= queue.length) {
+        box.innerHTML = `<h3>🎉 完成 ${queue.length} 题！</h3><p class="muted">把你答得最卡的 3 题，参考答案改成自己的版本，明天再练一遍。</p><button class="btn again">再来一轮</button>`;
+        $('.again', box).onclick = start;
+        return;
+      }
+      const x = queue[idx];
+      const showZh = $('.qa-zh', el).checked;
+      box.innerHTML = `<div class="prog">${idx + 1} / ${queue.length} · ${esc(x.cat)}</div>
+        <div class="cue" lang="ko">${esc(x.q)}</div>
+        <div class="zh qzh ${showZh ? '' : 'hidden'}">${esc(x.qzh)}</div>
+        <div class="countdown"><div></div></div>
+        <div class="check-row center-row">
+          <button class="btn replay">🔁 再听一遍</button>
+          <button class="btn ghost show-zh">看中文</button>
+          <button class="btn primary answered">我回答完了 → 看参考答案</button>
+        </div>
+        <details class="typed my-ans"><summary>（可选）用键盘语音输入/打字记下你的回答</summary><textarea rows="2" lang="ko" placeholder="${hasSR ? '说完后可以在这里记一下' : '点这里 → 键盘 🎤 → 用韩语回答'}"></textarea></details>
+        <div class="answer hidden"><div class="eyebrow">参考回答</div><div class="ko" lang="ko">${esc(x.a)}</div><div class="zh">${esc(x.azh)}</div><div class="acts"></div><div class="slot"></div></div>
+        <div class="check-row center-row"><button class="btn primary nxt hidden">下一题 ›</button></div>`;
+      $('.replay', box).onclick = () => speak(x.q);
+      $('.show-zh', box).onclick = () => $('.qzh', box).classList.remove('hidden');
+      $('.answered', box).onclick = () => {
+        const ans = $('.answer', box);
+        ans.classList.remove('hidden');
+        $('.answered', box).classList.add('hidden');
+        $('.nxt', box).classList.remove('hidden');
+        $('.acts', ans).appendChild(speakBtn(x.a, '▶ 参考回答'));
+        $('.acts', ans).appendChild(speakBtn(x.a, '🐢 慢速', 0.75));
+        $('.slot', ans).appendChild(h('<p class="muted small">跟读参考回答：</p>'));
+        $('.slot', ans).appendChild(speakCheck(x.a));
+        S.qaDone[x.id] = (S.qaDone[x.id] || 0) + 1; save(); logRep();
+        speak(x.a);
+      };
+      $('.nxt', box).onclick = () => { stopSpeak(); stopListen(); idx++; render(); };
+      requestAnimationFrame(() => { const bar = $('.countdown div', box); if (bar) bar.classList.add('go'); });
+      speak(x.q);
+    }
+    function start() { queue = shuffle(pool); idx = 0; box.classList.remove('hidden'); box.scrollIntoView({ behavior: 'smooth', block: 'start' }); render(); }
+    $('.qa-start', el).onclick = start;
   }
 
   /* ═════════════ 功能句库 ═════════════ */

@@ -154,6 +154,19 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .sh-row .pb-main .ko { font-size: 1.12rem; }
 .sh-res { grid-column: 1 / -1; margin-top: 4px; }
 .sec-title { margin-top: 18px; }
+.qa-box { text-align: center; }
+.qa-box .zh { color: var(--muted); }
+.qa-box .answer .zh { margin-top: 4px; }
+.center-row { justify-content: center; margin-top: 8px; }
+.my-ans { text-align: left; max-width: 520px; margin: 10px auto 0; }
+.qa-item { padding: 12px 14px; margin-bottom: 8px; }
+.qa-item summary { cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+.qa-item summary .ko { font-weight: 600; font-size: 1.05rem; }
+.qa-item summary .zh { color: var(--muted); font-size: .88rem; }
+.qa-item summary em { font-style: normal; color: var(--good); }
+.qa-ans { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.qa-ans .ko { color: var(--accent-2); font-weight: 600; }
+.qa-ans .zh { color: var(--muted); font-size: .9rem; }
 
 /* ── check ── */
 .check { margin-top: 10px; border-top: 1px dashed var(--line); padding-top: 10px; }
