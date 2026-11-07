@@ -22,7 +22,18 @@
   const SCENE_CATS = (K.sceneCatOrder || []).concat([...new Set((K.scenes || []).map((s) => s.cat))].filter((c) => !(K.sceneCatOrder || []).includes(c)));
   const SCENES = (K.scenes || []).slice().sort((a, b) => SCENE_CATS.indexOf(a.cat) - SCENE_CATS.indexOf(b.cat) || (+a.id.slice(1)) - (+b.id.slice(1)));
   const sceneNo = (s) => String(SCENES.indexOf(s) + 1).padStart(3, '0');
-  const PASSAGES = (K.shadowing || []).slice().sort((a, b) => a.id.localeCompare(b.id));
+  // 短文：按难度排，同难度按编号；显示编号 01–48
+  const PASSAGES = (K.shadowing || []).slice().sort((a, b) => a.level - b.level || a.id.localeCompare(b.id));
+  const passageNo = (p) => String(PASSAGES.indexOf(p) + 1).padStart(2, '0');
+  // 句库：按 order.js 的 phraseGroups 分组排序（没列进去的放最后）
+  const PB_GROUPS = (() => {
+    const pb = (K.phrasebank || []).map((c, ci) => Object.assign({}, c, { ci }));
+    const used = new Set();
+    const gs = (K.phraseGroups || []).map((g) => ({ name: g.name, cats: g.cats.map((n) => pb.find((c) => c.cat === n)).filter((c) => c && !used.has(c.ci) && used.add(c.ci)) })).filter((g) => g.cats.length);
+    const rest = pb.filter((c) => !used.has(c.ci));
+    if (rest.length) gs.push({ name: '其他', cats: rest });
+    return gs;
+  })();
   const QA = (K.qa || []).flatMap((c, ci) => c.items.map((it, i) => ({ id: 'q' + ci + '-' + i, cat: c.cat, ci, q: it[0], qzh: it[1], a: it[2], azh: it[3] })));
   const TOTAL_DAYS = WEEKS.length * 7;
   const SDK_URL = 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.0.0/+esm';
@@ -99,6 +110,7 @@
     custom: {},        // 收藏的句子 { 'x…': { ko, zh, src } }
     shadowDone: {},    // { passageId: 'YYYY-MM-DD' }
     qaDone: {},        // { qaId: count }
+    listenDone: {},    // 听力理解 { id: { date, best } }
     settings: { rate: 1, voiceURI: '', autoListen: true, apiKey: '', model: 'claude-opus-5-5', correction: true },
   });
   /* 旧进度迁移：旧版每周 = 4 课 + 复习(第5天) + 周测(第6天) + 自由对话(第7天)；
@@ -197,7 +209,7 @@
   function ttsText(t) {
     return String(t).replace(/（[^）]*）/g, '').replace(/\[.*?\]/g, '').replace(/[~～]/g, '').replace(/\s\/\s/g, ', ').replace(/—/g, ', ').replace(/↗|↘/g, '').replace(/…/g, '...');
   }
-  function speak(text, rateMul) {
+  function speak(text, rateMul, pitch) {
     return new Promise((resolve) => {
       if (!('speechSynthesis' in window)) { resolve(); return; }
       speechSynthesis.cancel();
@@ -206,6 +218,7 @@
       const v = koVoices.find((x) => x.voiceURI === S.settings.voiceURI) || koVoices.find((x) => /google|yuna|sora|heami|sunhi/i.test(x.name)) || koVoices[0];
       if (v) u.voice = v;
       u.rate = Math.max(0.4, Math.min(1.6, (rateMul || 1) * (S.settings.rate || 1)));
+      if (pitch) u.pitch = Math.max(0.5, Math.min(1.8, pitch));
       let done = false;
       const finish = () => { if (done) return; done = true; speaking = false; clearTimeout(timer); resolve(); };
       u.onend = finish; u.onerror = finish;
@@ -1106,17 +1119,19 @@
   /* ═════════════ 短文跟读 ═════════════ */
   function viewShadow(pid) {
     if (pid) return viewPassage(pid);
-    const levels = { 1: '入门', 2: '基础', 3: '进阶', 4: '挑战' };
+    const levels = { 1: '入门', 2: '基础', 3: '进阶', 4: '挑战', 5: '高阶' };
     setView(`<h1 class="page-title">短文跟读 <small>${PASSAGES.length} 篇 1 分钟独白</small></h1>
       <div class="tip card">影子跟读（Shadowing）四步：① 先听全文 ② 逐句跟读，模仿语调和停顿 ③ 遮住韩语只看中文说 ④ 什么都不看，用自己的话复述全文。每篇练到能流利复述为止。</div>
-      <div class="unit-list">${PASSAGES.map((p) => `<a class="unit-item ${S.shadowDone[p.id] ? 'done' : ''}" href="#shadow-${p.id}">
-        <span class="u-no">${p.level}</span><span class="u-t"><b>${esc(p.title)}</b><small lang="ko">${esc(p.ko)} · ${levels[p.level] || ''} · ${p.sentences.length} 句</small></span>
-        <span class="u-s">${S.shadowDone[p.id] ? '✅' : '›'}</span></a>`).join('')}</div>`);
+      ${[...new Set(PASSAGES.map((p) => p.level))].map((lv) => { const ps = PASSAGES.filter((p) => p.level === lv); const done = ps.filter((p) => S.shadowDone[p.id]).length;
+        return `<section class="scene-group"><h2 class="sec-title">难度 ${lv} · ${levels[lv] || ''} <small class="muted">${passageNo(ps[0])}–${passageNo(ps[ps.length - 1])} · ${ps.length} 篇${done ? ` · 已练 ${done}` : ''}</small></h2>
+        <div class="unit-list">${ps.map((p) => `<a class="unit-item ${S.shadowDone[p.id] ? 'done' : ''}" href="#shadow-${p.id}">
+        <span class="u-no">${passageNo(p)}</span><span class="u-t"><b>${esc(p.title)}</b><small lang="ko">${esc(p.ko)} · ${p.sentences.length} 句</small></span>
+        <span class="u-s">${S.shadowDone[p.id] ? '✅' : '›'}</span></a>`).join('')}</div></section>`; }).join('')}`);
   }
   function viewPassage(pid) {
     const p = PASSAGES.find((x) => x.id === pid) || PASSAGES[0];
     const i = PASSAGES.indexOf(p);
-    const el = setView(`<div class="eyebrow">短文跟读 · 难度 ${p.level}</div>
+    const el = setView(`<div class="eyebrow">短文跟读 · 第 ${passageNo(p)} 篇 · 难度 ${p.level}</div>
       <h1 class="page-title">${esc(p.title)} <small lang="ko">${esc(p.ko)}</small></h1>
       <div class="toolbar">
         <button class="btn play-all">▶ 听全文</button>
@@ -1202,11 +1217,13 @@
   function viewQA(cat) {
     const cats = (K.qa || []).map((c) => c.cat);
     const ci = cat != null && cats[+cat] ? +cat : -1;
+    const qaOrd = (K.qaCatOrder || []);
+    const catIdx = cats.map((c, i) => i).sort((a, b) => { const x = qaOrd.indexOf(cats[a]), y = qaOrd.indexOf(cats[b]); return (x < 0 ? 1e3 + a : x) - (y < 0 ? 1e3 + b : y); });
     const pool = QA.filter((x) => ci < 0 || x.ci === ci);
     const doneN = QA.filter((x) => S.qaDone[x.id]).length;
     const el = setView(`<h1 class="page-title">百问百答 <small>韩国人最常问你的 ${QA.length} 个问题</small></h1>
       <div class="tip card">听问题 → <b>5 秒内用你自己的情况回答</b>（说出来！）→ 看参考答案 → 跟读参考答案 → 把参考答案改成你自己的版本再说一遍。已练过 ${doneN} / ${QA.length} 题。</div>
-      <div class="chips filter"><a class="chip ${ci < 0 ? 'on' : ''}" href="#qa">全部</a>${cats.map((c, i) => `<a class="chip ${ci === i ? 'on' : ''}" href="#qa-${i}">${esc(c)}</a>`).join('')}</div>
+      <div class="chips filter"><a class="chip ${ci < 0 ? 'on' : ''}" href="#qa">全部</a>${catIdx.map((i) => `<a class="chip ${ci === i ? 'on' : ''}" href="#qa-${i}">${esc(cats[i])}</a>`).join('')}</div>
       <div class="toolbar">
         <button class="btn primary big qa-start">▶ 开始随机问答（${pool.length} 题）</button>
         <label class="switch"><input type="checkbox" class="qa-zh" id="qa-show-zh"> 显示问题的中文</label>
@@ -1215,7 +1232,7 @@
       <h2 class="sec-title">全部问题</h2>
       <div class="qa-list"></div>`);
     const box = $('.qa-box', el), list = $('.qa-list', el);
-    pool.forEach((x) => {
+    pool.slice().sort((a, b) => catIdx.indexOf(a.ci) - catIdx.indexOf(b.ci)).forEach((x) => {
       const row = h(`<details class="card qa-item"><summary><span class="ko" lang="ko">${esc(x.q)}</span><span class="zh">${esc(x.qzh)}</span>${S.qaDone[x.id] ? ' <em>✓</em>' : ''}</summary>
         <div class="qa-ans"><div class="ko" lang="ko">${esc(x.a)}</div><div class="zh">${esc(x.azh)}</div><div class="acts"></div></div></details>`);
       $('.acts', row).appendChild(speakBtn(x.q, '▶ 问题'));
@@ -1343,13 +1360,156 @@
     if (which === 'numbers') return viewNumbers();
     if (which === 'listen') return viewListen();
     if (which === 'styles') return viewStyles();
+    if (which && /^replies/.test(which)) return viewReplies(which.split('-')[1]);
+    if (which && /^comp/.test(which)) return viewComprehension(which.slice(5) || null);
     setView(`<h1 class="page-title">专项练习 <small>不用 AI，随时练</small></h1>
       <div class="unit-list">
         <a class="unit-item" href="#drills-numbers"><span class="u-no">数</span><span class="u-t"><b>数字快练</b><small>价格、时间、日期、电话、年龄、个数、房号、年份——随机生成，看数字说韩语，自动判对错</small></span><span class="u-s">›</span></a>
         <a class="unit-item" href="#drills-listen"><span class="u-no">听</span><span class="u-t"><b>听辨练习</b><small>${(K.pairs || []).length} 组易混音（가/까/카、반/방、어/오……），听音选字</small></span><span class="u-s">›</span></a>
+        <a class="unit-item" href="#drills-replies"><span class="u-no">接</span><span class="u-t"><b>接话选择</b><small>${REPLIES.length} 句对方的话，听完选最自然的回答，看每个错误选项错在哪</small></span><span class="u-s">›</span></a>
+        <a class="unit-item" href="#drills-comp"><span class="u-no">理</span><span class="u-t"><b>听力理解</b><small>${LISTENING.length} 段对话和广播，不看文字听，答中文选择题，再看原文跟读</small></span><span class="u-s">›</span></a>
         <a class="unit-item" href="#drills-styles"><span class="u-no">语</span><span class="u-t"><b>语体转换</b><small>${(K.styles || []).length} 句话 × 3 种语体（해요体 / 반말 / 합니다体），练到秒切</small></span><span class="u-s">›</span></a>
         <a class="unit-item" href="#search"><span class="u-no">搜</span><span class="u-t"><b>全站搜索</b><small>在所有课程、情景、句库、短文、百问里搜韩语或中文</small></span><span class="u-s">›</span></a>
       </div>`);
+  }
+
+  /* ═════════════ 接话选择 ═════════════ */
+  const REPLIES = (K.replies || []).flatMap((c, ci) => c.items.map((it, i) => ({ id: 'r' + ci + '-' + i, cat: c.cat, ci, cue: it[0], cueZh: it[1], opts: it[2] })));
+  function viewReplies(cat) {
+    const cats = (K.replies || []).map((c) => c.cat);
+    const ci = cat != null && cats[+cat] ? +cat : -1;
+    const pool = REPLIES.filter((x) => ci < 0 || x.ci === ci);
+    let queue = shuffle(pool), idx = 0, right = 0, total = 0;
+    const el = setView(`<div class="eyebrow">专项练习</div><h1 class="page-title">接话选择 <small>${REPLIES.length} 题</small></h1>
+      <div class="tip card">先<b>只听</b>对方说的话（听不懂可以点"显示原句"），从 3 个回答里选最自然的。答完看每个选项错在哪里，再<b>跟读正确回答</b>。错的选项都是中国学习者最常犯的：照抄对方的话、敬语用在自己身上、"네/아니요"答反、中文直译……</div>
+      <div class="chips filter"><a class="chip ${ci < 0 ? 'on' : ''}" href="#drills-replies">全部</a>${cats.map((c, i) => `<a class="chip ${ci === i ? 'on' : ''}" href="#drills-replies-${i}">${esc(c)}</a>`).join('')}</div>
+      <div class="card rep-box"></div>`);
+    const box = $('.rep-box', el);
+    function render() {
+      if (idx >= queue.length) { queue = shuffle(pool); idx = 0; }
+      const x = queue[idx];
+      const opts = shuffle(x.opts.map((o, k) => ({ ko: o[0], zh: o[1], why: o[2], ok: k === 0 })));
+      box.innerHTML = `<div class="prog">${idx + 1} / ${queue.length} · ${esc(x.cat)} · 答对 ${right} / ${total}</div>
+        <div class="check-row center-row"><button class="btn primary big play">🔊 再听一遍</button><button class="btn slow">🐢 慢速</button><button class="btn ghost show-cue">显示原句</button></div>
+        <div class="cue-wrap hidden"><div class="cue" lang="ko">${esc(x.cue)}</div><div class="zh">${esc(x.cueZh)}</div></div>
+        <div class="muted small rep-ctx">${/（/.test(x.cueZh) ? '情境：' + esc((x.cueZh.match(/（([^）]*)）/) || [])[1] || '') : ''}</div>
+        <div class="rep-opts">${opts.map((o, k) => `<button class="rep-opt" data-k="${k}"><b lang="ko">${esc(o.ko)}</b><span class="rep-zh">${esc(o.zh)}</span><span class="rep-why">${o.ok ? '✓ ' : '✗ '}${esc(o.why)}</span></button>`).join('')}</div>
+        <div class="rep-after hidden"><div class="muted small">跟读正确回答：</div></div>
+        <div class="check-row center-row"><button class="btn primary nxt hidden">下一题 ›</button></div>`;
+      $('.play', box).onclick = () => speak(x.cue, 0.95);
+      $('.slow', box).onclick = () => speak(x.cue, 0.65);
+      $('.show-cue', box).onclick = () => $('.cue-wrap', box).classList.remove('hidden');
+      let answered = false;
+      $$('.rep-opt', box).forEach((b) => (b.onclick = () => {
+        const o = opts[+b.dataset.k];
+        if (answered) { speak(o.ko); return; }
+        answered = true; total++; if (o.ok) right++;
+        box.classList.add('answered');
+        $$('.rep-opt', box).forEach((bb) => bb.classList.add(opts[+bb.dataset.k].ok ? 'right' : 'dim'));
+        if (!o.ok) b.classList.add('wrong');
+        $('.cue-wrap', box).classList.remove('hidden');
+        $('.prog', box).textContent = `${idx + 1} / ${queue.length} · ${x.cat} · 答对 ${right} / ${total}`;
+        const good = opts.find((z) => z.ok);
+        const after = $('.rep-after', box);
+        after.classList.remove('hidden');
+        const acts = h('<div class="acts"></div>');
+        acts.appendChild(speakBtn(good.ko, '▶ 正确回答'));
+        acts.appendChild(starBtn(good.ko, good.zh, '接话选择 · ' + x.cue));
+        after.appendChild(acts);
+        after.appendChild(speakCheck(good.ko));
+        $('.nxt', box).classList.remove('hidden');
+        speak(good.ko);
+        logRep();
+      }));
+      $('.nxt', box).onclick = () => { stopListen(); stopSpeak(); box.classList.remove('answered'); idx++; render(); };
+      speak(x.cue, 0.95);
+    }
+    render();
+  }
+
+  /* ═════════════ 听力理解 ═════════════ */
+  const LISTENING = (K.listening || []).slice().sort((a, b) => a.level - b.level || a.id.localeCompare(b.id));
+  const listenNo = (d) => String(LISTENING.indexOf(d) + 1).padStart(2, '0');
+  function speakAs(text, who, rate) { return speak(text, (rate || 1) * (who === 'N' ? 0.95 : 1), who === 'B' ? 1.35 : who === 'C' ? 0.8 : 1); }
+  function viewComprehension(id) {
+    if (!S.listenDone) S.listenDone = {};
+    if (id) return viewCompItem(id);
+    const lv = { 1: '入门', 2: '基础', 3: '进阶' };
+    setView(`<div class="eyebrow">专项练习</div><h1 class="page-title">听力理解 <small>${LISTENING.length} 段</small></h1>
+      <div class="tip card">先<b>不看文字</b>听整段对话或广播（可以听两遍），回答中文选择题；全部答完再看原文、逐句跟读。练的是"抓重点"：时间、地点、数字、原因、最后的决定。<br><span class="small muted">两个人说话时，B 的声音会调高一点，方便区分。</span></div>
+      ${[...new Set(LISTENING.map((d) => d.level))].map((l) => { const ds = LISTENING.filter((d) => d.level === l); const done = ds.filter((d) => S.listenDone[d.id]).length;
+        return `<section class="scene-group"><h2 class="sec-title">难度 ${l} · ${lv[l] || ''} <small class="muted">${ds.length} 段${done ? ` · 已练 ${done}` : ''}</small></h2>
+        <div class="unit-list">${ds.map((d) => `<a class="unit-item ${S.listenDone[d.id] ? 'done' : ''}" href="#drills-comp-${d.id}">
+          <span class="u-no">${listenNo(d)}</span><span class="u-t"><b>${esc(d.title)}</b><small>${d.lines.some((x) => x[0] === 'N') ? '广播 / 留言' : '对话'} · ${d.qs.length} 题${S.listenDone[d.id] ? ' · 最好 ' + S.listenDone[d.id].best + '/' + d.qs.length : ''}</small></span>
+          <span class="u-s">${S.listenDone[d.id] ? '✅' : '›'}</span></a>`).join('')}</div></section>`; }).join('')}`);
+  }
+  function viewCompItem(id) {
+    const d = LISTENING.find((x) => x.id === id) || LISTENING[0];
+    const i = LISTENING.indexOf(d);
+    const el = setView(`<div class="eyebrow">听力理解 · 第 ${listenNo(d)} 段 · 难度 ${d.level}</div><h1 class="page-title">${esc(d.title)}</h1>
+      <div class="toolbar"><button class="btn primary play-all">▶ 听全文</button><button class="btn slow-all">🐢 慢速</button><button class="btn ghost stop">■ 停止</button></div>
+      <div class="card comp-qs"></div>
+      <div class="comp-res"></div>
+      <div class="card comp-script hidden"><h2>原文</h2><div class="comp-lines"></div></div>
+      <div class="unit-foot"><div class="nav-units">
+        ${i > 0 ? `<a class="btn ghost" href="#drills-comp-${LISTENING[i - 1].id}">‹ 上一段</a>` : ''}
+        <a class="btn ghost" href="#drills-comp">全部</a>
+        ${i < LISTENING.length - 1 ? `<a class="btn ghost" href="#drills-comp-${LISTENING[i + 1].id}">下一段 ›</a>` : ''}
+      </div></div>`);
+    let run = 0;
+    onLeave(() => { run++; });
+    const rows = [];
+    const playAll = async (rate) => {
+      const my = ++run;
+      for (let k = 0; k < d.lines.length; k++) {
+        if (my !== run) return;
+        rows.forEach((r) => r.classList.remove('focus')); if (rows[k]) rows[k].classList.add('focus');
+        await speakAs(d.lines[k][1], d.lines[k][0], rate); await sleep(450);
+      }
+      rows.forEach((r) => r.classList.remove('focus'));
+    };
+    $('.play-all', el).onclick = () => { playAll(1); logRep(0); };
+    $('.slow-all', el).onclick = () => playAll(0.75);
+    $('.stop', el).onclick = () => { run++; stopSpeak(); };
+    const qbox = $('.comp-qs', el);
+    const answers = new Array(d.qs.length).fill(null);
+    d.qs.forEach((q, qi) => {
+      const sec = h(`<div class="comp-q"><div class="comp-qt"><b>${qi + 1}.</b> ${esc(q[0])}</div><div class="comp-opts">${q[1].map((o, k) => `<button class="btn opt" data-k="${k}">${esc(o)}</button>`).join('')}</div></div>`);
+      $$('.opt', sec).forEach((b) => (b.onclick = () => {
+        if (answers[qi] != null) return;
+        answers[qi] = +b.dataset.k;
+        const ok = answers[qi] === q[2];
+        b.classList.add(ok ? 'right' : 'wrong');
+        $$('.opt', sec).forEach((x) => { if (+x.dataset.k === q[2]) x.classList.add('right'); });
+        if (answers.every((a) => a != null)) finish();
+      }));
+      qbox.appendChild(sec);
+    });
+    function finish() {
+      const score = answers.filter((a, k) => a === d.qs[k][2]).length;
+      const prev = S.listenDone[d.id];
+      S.listenDone[d.id] = { date: today(), best: Math.max(score, prev ? prev.best : 0) };
+      save(); logRep();
+      $('.comp-res', el).innerHTML = `<div class="card center-row"><span class="score ${score === d.qs.length ? 'great' : score >= d.qs.length - 1 ? 'good' : 'bad'}">${score} / ${d.qs.length}</span>
+        <span class="muted small">${score === d.qs.length ? '全对！下面看原文，逐句跟读。' : '对照原文，找到你没听出来的那句，多听几遍再跟读。'}</span></div>`;
+      $('.comp-script', el).classList.remove('hidden');
+      const pk = $('.peek', el); if (pk) pk.parentNode.remove();
+    }
+    const lines = $('.comp-lines', el);
+    d.lines.forEach(([who, ko, zh]) => {
+      const row = h(`<div class="pb-row comp-line"><div class="pb-main"><span class="ko" lang="ko">${who !== 'N' ? `<b class="who">${esc(who)}</b> ` : ''}${esc(ko)}</span><span class="zh">${esc(zh)}</span></div><div class="pb-acts"></div></div>`);
+      const play = h('<button class="btn icon" title="播放">▶</button>');
+      play.onclick = () => speakAs(ko, who);
+      $('.pb-acts', row).appendChild(play);
+      const mic = h('<button class="btn icon" title="跟读打分">🎤</button>');
+      mic.onclick = () => { let chk = $('.check', row); if (!chk) { chk = speakCheck(ko); row.appendChild(chk); } chk.start(); };
+      $('.pb-acts', row).appendChild(mic);
+      $('.pb-acts', row).appendChild(starBtn(ko, zh, '听力理解 · ' + d.title));
+      lines.appendChild(row); rows.push(row);
+    });
+    const peek = h('<div class="center-row"><button class="btn ghost small peek">先看原文（不答题）</button></div>');
+    $('.peek', peek).onclick = () => { $('.comp-script', el).classList.remove('hidden'); peek.remove(); };
+    qbox.after(peek);
   }
 
   function viewNumbers() {
@@ -1467,6 +1627,8 @@
     PASSAGES.forEach((p) => p.sentences.forEach((x) => add(x[0], x[1], '短文 · ' + p.title, '#shadow-' + p.id)));
     QA.forEach((x) => { add(x.q, x.qzh, '百问 · ' + x.cat, '#qa-' + x.ci); add(x.a, x.azh, '百问 · 参考回答', '#qa-' + x.ci); });
     (K.styles || []).forEach((it) => [1, 2, 3].forEach((k) => add(it[k], it[0], '语体转换', '#drills-styles')));
+    REPLIES.forEach((x) => { add(x.cue, x.cueZh, '接话选择', '#drills-replies-' + x.ci); add(x.opts[0][0], x.opts[0][1], '接话选择 · 正确回答', '#drills-replies-' + x.ci); });
+    LISTENING.forEach((d) => d.lines.forEach((l) => add(l[1], l[2], '听力理解 · ' + d.title, '#drills-comp-' + d.id)));
     (K.pronunciation || []).forEach((r) => add(r.sentence[0], r.sentence[2], '发音 · ' + r.title, '#pron'));
     return idx;
   }
@@ -1506,10 +1668,11 @@
     const el = setView(`<h1 class="page-title">功能句库 <small>${count} 句</small></h1>
       <div class="tip card">按"交际功能"分类的高频句。日常对话里 90% 的句子都由这些零件组成。点句子播放，点 🎤 开口打分。打开「遮住韩语」做中→韩自测。</div>
       <div class="toolbar"><label class="switch"><input type="checkbox" class="hide-ko"> 遮住韩语</label></div>
-      <div class="chips filter">${pb.map((c, i) => `<a class="chip" href="javascript:void 0" data-i="${i}">${esc(c.cat)}</a>`).join('')}</div>
+      ${PB_GROUPS.map((g) => `<div class="pb-group"><b>${esc(g.name)}</b><div class="chips filter">${g.cats.map((c) => `<a class="chip" href="javascript:void 0" data-i="${c.ci}">${esc(c.cat)}</a>`).join('')}</div></div>`).join('')}
       <div class="pb"></div>`);
     const box = $('.pb', el);
-    pb.forEach((c, ci) => {
+    PB_GROUPS.forEach((g) => { box.appendChild(h(`<h2 class="sec-title pb-gtitle">${esc(g.name)}</h2>`)); g.cats.forEach((c) => {
+      const ci = c.ci;
       const sec = h(`<section class="card pb-sec" id="pb-${ci}"><h2>${esc(c.cat)}</h2><div class="pb-list"></div></section>`);
       const list = $('.pb-list', sec);
       c.items.forEach((it) => {
@@ -1527,7 +1690,7 @@
         list.appendChild(row);
       });
       box.appendChild(sec);
-    });
+    }); });
     $$('.filter .chip', el).forEach((a) => (a.onclick = () => $('#pb-' + a.dataset.i).scrollIntoView({ behavior: 'smooth' })));
     $('.hide-ko', el).onchange = (e) => { box.classList.toggle('hidden-ko', e.target.checked); $$('.pb-row', box).forEach((r) => r.classList.remove('reveal')); };
   }

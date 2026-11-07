@@ -63,8 +63,12 @@ for (const w of K.weeks) {
 {
   const n = K.phrasebank.reduce((a, c) => a + c.items.length, 0);
   let md = BANNER + `# 功能句库（${n} 句）\n\n按交际功能分类。日常对话 90% 的句子都由这些"零件"组成。用法：遮住左栏，看中文说韩语。\n\n`;
-  for (const c of K.phrasebank) {
-    md += `## ${c.cat}\n\n| 韩语 | 中文 | 备注 |\n|---|---|---|\n`;
+  const groups = (K.phraseGroups || []).map((g) => ({ name: g.name, cats: g.cats.map((n) => K.phrasebank.find((c) => c.cat === n)).filter(Boolean) }));
+  const rest = K.phrasebank.filter((c) => !groups.some((g) => g.cats.includes(c)));
+  if (rest.length) groups.push({ name: '其他', cats: rest });
+  md += groups.map((g) => `- **${g.name}**：${g.cats.map((c) => c.cat).join('、')}`).join('\n') + '\n\n';
+  for (const c of groups.flatMap((g) => g.cats.map((x) => ({ ...x, g: g.name })))) {
+    md += `## ${c.g} · ${c.cat}\n\n| 韩语 | 中文 | 备注 |\n|---|---|---|\n`;
     for (const it of c.items) md += `| ${cell(it[0])} | ${cell(it[1])} | ${cell(it[2])} |\n`;
     md += '\n';
   }
@@ -85,8 +89,9 @@ for (const w of K.weeks) {
 // 短文跟读
 {
   let md = BANNER + `# 短文跟读（${K.shadowing.length} 篇 1 分钟独白）\n\n影子跟读四步：① 先听全文 ② 逐句跟读，模仿语调和停顿 ③ 遮住韩语只看中文说 ④ 什么都不看，用自己的话复述全文。\n\n`;
-  for (const p of K.shadowing) {
-    md += `## ${p.id.slice(1)}. ${p.title}　<small>${p.ko} · 难度 ${p.level}</small>\n\n`;
+  const PS = K.shadowing.slice().sort((a, b) => a.level - b.level || a.id.localeCompare(b.id));
+  for (const p of PS) {
+    md += `## ${String(PS.indexOf(p) + 1).padStart(2, '0')}. ${p.title}　<small>${p.ko} · 难度 ${p.level}</small>\n\n`;
     md += p.sentences.map(([ko, zh]) => `> ${ko}  \n> <sub>${zh}</sub>`).join('\n>\n') + '\n\n';
   }
   fs.writeFileSync(path.join(out, 'shadowing.md'), md);
@@ -96,7 +101,9 @@ for (const w of K.weeks) {
 {
   const n = K.qa.reduce((a, c) => a + c.items.length, 0);
   let md = BANNER + `# 百问百答：韩国人最常问你的 ${n} 个问题\n\n用法：遮住参考回答，听（读）问题后 5 秒内用自己的情况回答 → 对照参考回答 → 跟读 → 改成你自己的版本再说一遍。\n\n`;
-  for (const c of K.qa) {
+  const qo = K.qaCatOrder || [];
+  const QC = K.qa.slice().sort((a, b) => { const x = qo.indexOf(a.cat), y = qo.indexOf(b.cat); return (x < 0 ? 1e3 : x) - (y < 0 ? 1e3 : y); });
+  for (const c of QC) {
     md += `## ${c.cat}\n\n| 问题 | 参考回答 |\n|---|---|\n`;
     for (const [q, qzh, a, azh] of c.items) md += `| ${cell(q)}<br><sub>${cell(qzh)}</sub> | ${cell(a)}<br><sub>${cell(azh)}</sub> |\n`;
     md += '\n';
@@ -112,6 +119,31 @@ for (const w of K.weeks) {
   for (const g of K.pairs) md += `- **${g.title}**：${g.items.map(([w, z]) => `${w}（${z}）`).join(' · ')}\n`;
   md += `\n## 数字快练\n\n数字题是 App 里随机生成的（价格、时间、日期、电话、年龄、个数、房号、年份）。规则速记：\n\n- **汉字词**（일 이 삼 사…）：钱、日期、分钟、电话、楼层、房号、年份\n- **固有词**（한 두 세 네…）：几点、个数、年龄\n- 6월 = 유월，10월 = 시월；20 + 量词 = 스무；电话里 0 = 공，"-" = 에\n`;
   fs.writeFileSync(path.join(out, 'drills.md'), md);
+}
+
+// 接话选择 + 听力理解
+{
+  const nR = K.replies.reduce((a, c) => a + c.items.length, 0);
+  let md = BANNER + `# 接话选择（${nR} 题）\n\n对方说一句话，选最自然的回答。✓ 是正确答案，✗ 是中国学习者最常犯的错。用法：遮住下面的选项，先自己回答，再对照。\n\n`;
+  let n = 0;
+  for (const c of K.replies) {
+    md += `## ${c.cat}\n\n`;
+    for (const [cue, cueZh, opts] of c.items) {
+      md += `**${++n}. ${cue}**　<sub>${cueZh}</sub>\n\n`;
+      opts.forEach((o, k) => { md += `- ${k === 0 ? '✓' : '✗'} ${o[0]}　<sub>${o[1]}</sub> —— ${o[2]}\n`; });
+      md += '\n';
+    }
+  }
+  fs.writeFileSync(path.join(out, 'replies.md'), md);
+
+  const LS = K.listening.slice().sort((a, b) => a.level - b.level || a.id.localeCompare(b.id));
+  md = BANNER + `# 听力理解（${LS.length} 段）\n\n建议在 App 里练：先不看文字听，答题后再看原文。这里是原文和答案，方便复习。\n\n`;
+  LS.forEach((d, i) => {
+    md += `## ${String(i + 1).padStart(2, '0')}. ${d.title}　<small>难度 ${d.level}</small>\n\n`;
+    md += d.qs.map((q, k) => `${k + 1}. ${q[0]}　${q[1].map((o, j) => (j === q[2] ? `**${o}**` : o)).join(' / ')}`).join('\n') + '\n\n';
+    md += '<details><summary>原文</summary>\n\n' + d.lines.map(([w, ko, zh]) => `> ${w === 'N' ? '' : `**${w}**：`}${ko}  \n> <sub>${zh}</sub>`).join('\n>\n') + '\n\n</details>\n\n';
+  });
+  fs.writeFileSync(path.join(out, 'listening.md'), md);
 }
 
 // AI 陪练提示词

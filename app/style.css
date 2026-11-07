@@ -334,3 +334,26 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .s-src { display: block; font-size: .78rem; margin-top: 2px; }
 .btn.star { font-size: .95rem; }
 .sline .btn.star { grid-column: 2; justify-self: start; margin-top: 2px; min-height: 28px; padding: 2px 8px; }
+.pb-group { margin: 6px 0; }
+.pb-group > b { font-size: 13px; color: var(--muted, #888); }
+.pb-group .chips { margin-top: 4px; }
+.pb-gtitle { margin-top: 22px; }
+/* 接话选择 */
+.rep-opts { display: grid; gap: 10px; margin: 14px 0; }
+.rep-opt { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink); font: inherit; cursor: pointer; }
+.rep-opt b { font-size: 1.08rem; font-weight: 600; }
+.rep-opt .rep-zh, .rep-opt .rep-why { display: none; font-size: .86rem; color: var(--muted); }
+.answered .rep-opt .rep-zh, .answered .rep-opt .rep-why { display: block; }
+.rep-opt .rep-why { color: var(--ink); }
+.rep-opt.right { background: var(--good-soft); border-color: var(--good); }
+.rep-opt.wrong { background: var(--bad-soft); border-color: var(--bad); }
+.rep-opt.dim:not(.wrong) { opacity: .75; }
+.cue-wrap { text-align: center; margin: 8px 0; }
+.rep-ctx { text-align: center; }
+.rep-after { margin-top: 8px; }
+/* 听力理解 */
+.comp-q { margin: 6px 0 16px; }
+.comp-qt { margin-bottom: 8px; }
+.comp-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.comp-opts .opt { min-height: 0; padding: 10px; font-size: .95rem; }
+.comp-line .who { color: var(--muted); font-weight: 600; margin-right: 4px; }

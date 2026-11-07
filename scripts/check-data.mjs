@@ -23,6 +23,10 @@ const ord = K.unitOrder || [];
 if (ord.length !== K.units.length || new Set(ord).size !== ord.length) err('课程顺序表（order.js）和课程数量不一致或有重复');
 for (const id of ord) { const u = K.units.find((x) => x.id === id); if (!u) err('顺序表里有不存在的课：' + id); else if (u.week !== Math.floor(ord.indexOf(id) / 5) + 1) err(id + ' 在顺序表里的位置和它的周数不一致'); }
 for (const s of K.scenes) if (!(K.sceneCatOrder || []).includes(s.cat)) err(s.id + ' 的分类不在 sceneCatOrder 里：' + s.cat);
+{ const g = (K.phraseGroups || []).flatMap((x) => x.cats); for (const c of K.phrasebank) if (!g.includes(c.cat)) err('句库分类不在 phraseGroups 里：' + c.cat); for (const n of g) if (!K.phrasebank.some((c) => c.cat === n)) err('phraseGroups 里有不存在的分类：' + n); if (new Set(g).size !== g.length) err('phraseGroups 有重复分类'); }
+for (const c of K.qa) if (!(K.qaCatOrder || []).includes(c.cat)) err('百问分类不在 qaCatOrder 里：' + c.cat);
+{ let n = 0; for (const c of K.replies || []) for (const it of c.items) { n++; if (it.length !== 3 || !Array.isArray(it[2]) || it[2].length < 3 || it[2].some((o) => o.length !== 3 || o.some((s) => !String(s).trim()))) err('接话选择格式不对：' + it[0]); if (new Set(it[2].map((o) => o[0])).size !== it[2].length) err('接话选择选项重复：' + it[0]); } if (n < 50) err('接话选择题目太少：' + n); }
+{ const ids = new Set(); for (const d of K.listening || []) { if (ids.has(d.id)) err('听力理解编号重复：' + d.id); ids.add(d.id); if (!(d.level >= 1 && d.level <= 3)) err(d.id + ' 难度不对'); if (d.lines.length < 3) err(d.id + ' 原文太短'); for (const l of d.lines) if (l.length !== 3 || !/^[ABCN]$/.test(l[0]) || !l[1].trim() || !l[2].trim()) err(d.id + ' 原文格式不对：' + l[1]); for (const q of d.qs) if (q.length !== 3 || q[1].length < 3 || !(q[2] >= 0 && q[2] < q[1].length) || new Set(q[1]).size !== q[1].length) err(d.id + ' 题目格式不对：' + q[0]); } }
 const sids = new Set();
 for (const s of K.scenes) {
   if (sids.has(s.id)) err('重复的情景 id ' + s.id); sids.add(s.id);
