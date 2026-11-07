@@ -1,0 +1,98 @@
+// 从 app/data 生成可打印/离线阅读的 Markdown 讲义：node scripts/build-docs.mjs
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { loadKSS } from './load-data.mjs';
+
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const K = loadKSS();
+const out = path.join(root, 'lessons');
+fs.mkdirSync(out, { recursive: true });
+const cell = (s) => String(s || '').replace(/\|/g, '\\|');
+const BANNER = '<!-- 本文件由 scripts/build-docs.mjs 从 app/data 自动生成，请修改数据文件后重新生成 -->\n\n';
+
+// 每周讲义
+for (const w of K.weeks) {
+  const units = K.units.filter((u) => u.week === w.week);
+  const base = (w.week - 1) * 7;
+  let md = BANNER + `# 第 ${w.week} 周：${w.title}\n\n> ${w.goal}\n\n`;
+  md += `| 天 | 内容 |\n|---|---|\n`;
+  units.forEach((u, i) => { md += `| 第 ${base + i + 1} 天 | 第 ${u.id.slice(1)} 课 · ${u.title}（${u.ko}） |\n`; });
+  md += `| 第 ${base + 5} 天 | 复习 + 现实任务 |\n| 第 ${base + 6} 天 | 周测 |\n| 第 ${base + 7} 天 | 自由对话日 |\n\n`;
+  for (const u of units) {
+    md += `---\n\n## 第 ${u.id.slice(1)} 课　${u.title}　<small>${u.ko}</small>\n\n${u.goal}\n\n`;
+    md += `### ① 核心句块（每句跟读 3 遍，再遮住韩语看中文说）\n\n| # | 韩语 | 中文 | 要点 |\n|---|---|---|---|\n`;
+    u.chunks.forEach((c, i) => { md += `| ${i + 1} | ${cell(c[0])} | ${cell(c[1])} | ${cell(c[2])} |\n`; });
+    md += `\n### ② 情景对话：${u.dialogue.scene}\n\n你扮演：**${u.dialogue.roles[u.dialogue.me]}**（两个角色都要练）\n\n`;
+    for (const [r, ko, zh] of u.dialogue.lines) md += `- **${u.dialogue.roles[r]}**：${ko}  \n  <sub>${zh}</sub>\n`;
+    md += `\n### ③ 句型快反：${u.drill.pattern}\n\n> ${u.drill.tip}\n\n| 提示（5秒内开口） | 参考答案 |\n|---|---|\n`;
+    for (const [cue, ko] of u.drill.items) md += `| ${cell(cue)} | ${cell(ko)} |\n`;
+    md += `\n### ④ 独白任务（录音 ${u.mission.seconds >= 120 ? Math.round(u.mission.seconds / 60) + ' 分钟' : u.mission.seconds + ' 秒'}）\n\n${u.mission.prompt}\n\n可用表达：${u.mission.hints.map((x) => '`' + x + '`').join('　')}\n\n`;
+  }
+  md += `---\n\n## 第 ${base + 5} 天：现实任务（必须在真实世界完成）\n\n${w.realMissions.map((m) => `- [ ] ${m}`).join('\n')}\n\n`;
+  md += `## 第 ${base + 6} 天：周测（每题录音，不看提示）\n\n${w.test.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\n`;
+  md += `自评（各 1–5 分）：流利度 ___　准确度 ___　自然度 ___　反应速度 ___\n\n`;
+  md += `## 第 ${base + 7} 天：自由对话日\n\n至少 20 分钟不间断对话（真人优先，没有就用 AI 陪练），然后写复盘：最常卡壳的 3 句、最想记住的 3 个表达、下周要改的 1 个坏习惯。\n`;
+  fs.writeFileSync(path.join(out, `week-${w.week}.md`), md);
+}
+
+// 情景对话库
+{
+  let md = BANNER + `# 情景对话库（${K.scenes.length} 个日常场景）\n\n课程之外的日常生活全场景。每个都先听、再跟读、再分角色扮演。App 里「情景库」可以直接角色扮演并打分。\n\n`;
+  const cats = [...new Set(K.scenes.map((s) => s.cat))];
+  md += cats.map((c) => `- **${c}**：${K.scenes.filter((s) => s.cat === c).map((s) => s.title).join('、')}`).join('\n') + '\n\n';
+  for (const c of cats) {
+    md += `---\n\n## ${c}\n\n`;
+    for (const s of K.scenes.filter((x) => x.cat === c)) {
+      md += `### ${s.id.slice(1)}. ${s.title}\n\n`;
+      for (const [r, ko, zh] of s.lines) md += `- **${s.roles[r]}**：${ko}  \n  <sub>${zh}</sub>\n`;
+      md += '\n';
+    }
+  }
+  fs.writeFileSync(path.join(out, 'scenes.md'), md);
+}
+
+// 功能句库
+{
+  const n = K.phrasebank.reduce((a, c) => a + c.items.length, 0);
+  let md = BANNER + `# 功能句库（${n} 句）\n\n按交际功能分类。日常对话 90% 的句子都由这些"零件"组成。用法：遮住左栏，看中文说韩语。\n\n`;
+  for (const c of K.phrasebank) {
+    md += `## ${c.cat}\n\n| 韩语 | 中文 | 备注 |\n|---|---|---|\n`;
+    for (const it of c.items) md += `| ${cell(it[0])} | ${cell(it[1])} | ${cell(it[2])} |\n`;
+    md += '\n';
+  }
+  fs.writeFileSync(path.join(out, 'phrasebank.md'), md);
+}
+
+// 发音
+{
+  let md = BANNER + `# 发音急救（${K.pronunciation.length} 条音变规则）\n\n口语里"听不懂"和"说了对方听不懂"，一大半是音变问题。\n\n`;
+  for (const r of K.pronunciation) {
+    md += `## ${r.title}\n\n${r.rule}\n\n| 拼写 | 实际发音 | 意思 |\n|---|---|---|\n`;
+    for (const e of r.examples) md += `| ${cell(e[0])} | ${cell(e[1])} | ${cell(e[2])} |\n`;
+    md += `\n例句：**${r.sentence[0]}**　${r.sentence[1]}　（${r.sentence[2]}）\n\n`;
+  }
+  fs.writeFileSync(path.join(out, 'pronunciation.md'), md);
+}
+
+// 短文跟读
+{
+  let md = BANNER + `# 短文跟读（${K.shadowing.length} 篇 1 分钟独白）\n\n影子跟读四步：① 先听全文 ② 逐句跟读，模仿语调和停顿 ③ 遮住韩语只看中文说 ④ 什么都不看，用自己的话复述全文。\n\n`;
+  for (const p of K.shadowing) {
+    md += `## ${p.id.slice(1)}. ${p.title}　<small>${p.ko} · 难度 ${p.level}</small>\n\n`;
+    md += p.sentences.map(([ko, zh]) => `> ${ko}  \n> <sub>${zh}</sub>`).join('\n>\n') + '\n\n';
+  }
+  fs.writeFileSync(path.join(out, 'shadowing.md'), md);
+}
+
+// AI 陪练提示词
+{
+  let md = BANNER + `# AI 陪练提示词\n\n没有 API Key 也能用：把下面任意一段提示词完整复制，粘贴到 Claude App（或网页版）的新对话里，然后打开**语音模式**直接说韩语。\n\n> 语音模式下如果它不输出 \`<reply>\`/\`<feedback>\` 标签也没关系，你也可以加一句"语音模式下先用韩语回复，再用中文简短纠错"。\n\n`;
+  md += `**指令：** \`[시작]\` 开始对话 · \`[힌트]\` 不知道说什么时要提示 · \`[총평]\` 结束并要总评\n\n`;
+  for (const sc of K.aiScenarios) {
+    md += `## ${sc.icon} ${sc.title}\n\n\`\`\`text\n${K.buildTutorPrompt(sc, { correction: true })}\n\n[시작]\n\`\`\`\n\n`;
+  }
+  md += `## 📝 独白 / 周测批改\n\n\`\`\`text\n${K.buildGradePrompt()}\n\n【口语任务】\n（粘贴任务）\n\n【我的口语转写】\n（粘贴你说的内容）\n\`\`\`\n`;
+  fs.writeFileSync(path.join(out, 'ai-prompts.md'), md);
+}
+console.log('✓ 已生成 lessons/*.md');
