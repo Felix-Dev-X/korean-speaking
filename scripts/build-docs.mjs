@@ -97,6 +97,16 @@ for (const w of K.weeks) {
   fs.writeFileSync(path.join(out, 'qa.md'), md);
 }
 
+// 专项练习：语体转换 + 听辨
+{
+  let md = BANNER + `# 专项练习\n\n## 语体转换（${K.styles.length} 句 × 3 种语体）\n\n遮住右边三栏，看中文依次说出 해요体 → 반말 → 합니다体。\n\n| 中文 | 해요体 | 반말 | 합니다体 |\n|---|---|---|---|\n`;
+  for (const [zh, a, b, c] of K.styles) md += `| ${cell(zh)} | ${cell(a)} | ${cell(b)} | ${cell(c)} |\n`;
+  md += `\n## 听辨练习（${K.pairs.length} 组易混音）\n\n请别人随机读一个，你来猜；或者自己录音回听，确认自己能读出区别。\n\n`;
+  for (const g of K.pairs) md += `- **${g.title}**：${g.items.map(([w, z]) => `${w}（${z}）`).join(' · ')}\n`;
+  md += `\n## 数字快练\n\n数字题是 App 里随机生成的（价格、时间、日期、电话、年龄、个数、房号、年份）。规则速记：\n\n- **汉字词**（일 이 삼 사…）：钱、日期、分钟、电话、楼层、房号、年份\n- **固有词**（한 두 세 네…）：几点、个数、年龄\n- 6월 = 유월，10월 = 시월；20 + 量词 = 스무；电话里 0 = 공，"-" = 에\n`;
+  fs.writeFileSync(path.join(out, 'drills.md'), md);
+}
+
 // AI 陪练提示词
 {
   let md = BANNER + `# AI 陪练提示词\n\n没有 API Key 也能用：把下面任意一段提示词完整复制，粘贴到 Claude App（或网页版）的新对话里，然后打开**语音模式**直接说韩语。\n\n> 语音模式下如果它不输出 \`<reply>\`/\`<feedback>\` 标签也没关系，你也可以加一句"语音模式下先用韩语回复，再用中文简短纠错"。\n\n`;

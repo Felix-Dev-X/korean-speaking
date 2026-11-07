@@ -302,3 +302,35 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
   .sline b { grid-row: auto; }
   .bubble { max-width: 95%; }
 }
+
+/* ── 30 天图表 ── */
+.chart30 { position: relative; display: grid; grid-template-columns: repeat(30, 1fr); gap: 3px; align-items: end; height: 90px; padding-top: 6px; border-bottom: 1px solid var(--line); }
+.c30 { height: 100%; display: flex; align-items: flex-end; }
+.c30b { width: 100%; min-height: 2px; background: var(--accent-2); opacity: .55; border-radius: 3px 3px 0 0; }
+.c30b.ok { background: var(--good); opacity: 1; }
+.c30line { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--muted); pointer-events: none; }
+.c30line span { position: absolute; right: 0; top: -1.3em; font-size: .7rem; color: var(--muted); background: var(--card); padding: 0 4px; }
+
+/* ── 专项练习 ── */
+.num-box, .listen-box, .style-box { text-align: center; }
+.num-show { font-size: 2.2rem; font-weight: 800; letter-spacing: .02em; margin: 14px 0 4px; font-variant-numeric: tabular-nums; }
+.opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin: 16px auto; max-width: 480px; }
+.opt { flex-direction: column; min-height: 72px; }
+.opt b { font-size: 1.4rem; }
+.opt small { color: var(--muted); font-size: .78rem; }
+.opt.right { background: var(--good-soft); border-color: var(--good); }
+.opt.wrong { background: var(--bad-soft); border-color: var(--bad); }
+.fb-line { min-height: 1.6em; }
+.style-rows { display: grid; gap: 10px; text-align: left; margin: 10px 0; }
+.style-row { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.style-lab b { margin-right: 6px; }
+.style-lab small { color: var(--muted); }
+.style-row .ko.hint { font-size: 1.15rem; font-weight: 600; color: var(--accent-2); margin: 4px 0; filter: blur(7px); user-select: none; }
+.style-row.reveal .ko.hint { filter: none; user-select: auto; }
+.style-row .acts { margin-top: 4px; }
+
+/* ── 搜索 / 收藏 ── */
+.s-row { margin-bottom: 8px; padding: 10px 12px; }
+.s-src { display: block; font-size: .78rem; margin-top: 2px; }
+.btn.star { font-size: .95rem; }
+.sline .btn.star { grid-column: 2; justify-self: start; margin-top: 2px; min-height: 28px; padding: 2px 8px; }

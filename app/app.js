@@ -87,6 +87,7 @@
     srs: {},           // { cardId: { due, ivl, ease, reps, lapses } }
     log: {},           // { 'YYYY-MM-DD': { sec, reps } }
     scenesDone: {},    // { sceneId: count }
+    custom: {},        // 收藏的句子 { 'x…': { ko, zh, src } }
     shadowDone: {},    // { passageId: 'YYYY-MM-DD' }
     qaDone: {},        // { qaId: count }
     settings: { rate: 1, voiceURI: '', autoListen: true, apiKey: '', model: 'claude-opus-5-5', correction: true },
@@ -168,7 +169,7 @@
   }
   if ('speechSynthesis' in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
   function ttsText(t) {
-    return String(t).replace(/\[.*?\]/g, '').replace(/[~～]/g, '').replace(/\s\/\s/g, ', ').replace(/—/g, ', ').replace(/↗|↘/g, '').replace(/…/g, '...');
+    return String(t).replace(/（[^）]*）/g, '').replace(/\[.*?\]/g, '').replace(/[~～]/g, '').replace(/\s\/\s/g, ', ').replace(/—/g, ', ').replace(/↗|↘/g, '').replace(/…/g, '...');
   }
   function speak(text, rateMul) {
     return new Promise((resolve) => {
@@ -239,7 +240,7 @@
   }[err] || '');
 
   /* ═════════════ 打分 ═════════════ */
-  const norm = (s) => String(s).replace(/\[.*?\]/g, '').toLowerCase().replace(/[^가-힣ㄱ-ㆎa-z0-9]/g, '');
+  const norm = (s) => String(s).replace(/（[^）]*）/g, '').replace(/\[.*?\]/g, '').toLowerCase().replace(/[^가-힣ㄱ-ㆎa-z0-9]/g, '');
   function lev(a, b) {
     const m = a.length, n = b.length;
     if (!m) return n; if (!n) return m;
@@ -520,6 +521,7 @@
     return cards;
   }
   function cardById(id) {
+    if (id[0] === 'x') { const c = S.custom && S.custom[id]; return c ? { id, ko: c.ko, zh: c.zh, note: '', src: '⭐ ' + (c.src || '收藏') } : null; }
     const uid = id.split('-')[0];
     const u = unitById(uid); if (!u) return null;
     return cardsOfUnit(u).find((c) => c.id === id) || null;
@@ -533,6 +535,21 @@
     else if (grade === 1) { c.ivl = Math.max(1, Math.round(c.ivl * 1.2)); c.ease = Math.max(1.3, c.ease - 0.15); c.reps++; c.due = addDays(today(), c.ivl); }
     else { c.ivl = c.ivl < 1 ? 1 : c.ivl < 3 ? 3 : Math.round(c.ivl * c.ease); c.ease = Math.min(3, c.ease + 0.05); c.reps++; c.due = addDays(today(), c.ivl); }
     S.srs[id] = c; save();
+  }
+  const favId = (ko) => { let h = 0; const t = String(ko); for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return 'x' + (h >>> 0).toString(36); };
+  function toggleFav(ko, zh, src) {
+    S.custom = S.custom || {};
+    const id = favId(ko);
+    if (S.custom[id]) { delete S.custom[id]; delete S.srs[id]; save(); return false; }
+    S.custom[id] = { ko, zh, src: src || '' };
+    S.srs[id] = { due: today(), ivl: 0, ease: 2.3, reps: 0, lapses: 0 };
+    save(); return true;
+  }
+  function starBtn(ko, zh, src) {
+    const on = () => !!(S.custom && S.custom[favId(ko)]);
+    const b = h(`<button class="btn icon star" title="加入/移出复习库">${on() ? '⭐' : '☆'}</button>`);
+    b.onclick = (e) => { e.stopPropagation(); const now = toggleFav(ko, zh, src); b.textContent = now ? '⭐' : '☆'; toast(now ? '已加入复习库（今天就会出现）' : '已移出复习库'); };
+    return b;
   }
   const dueIds = () => Object.keys(S.srs).filter((id) => S.srs[id].due <= today() && cardById(id));
 
@@ -582,7 +599,7 @@
     const arg = m[2];
     const R = {
       '': viewHome, units: viewUnits, unit: viewUnit, day: viewDay, review: viewReview,
-      scenes: viewScenes, scene: viewScene, phrases: viewPhrases, pron: viewPron, shadow: viewShadow, qa: viewQA,
+      scenes: viewScenes, scene: viewScene, phrases: viewPhrases, pron: viewPron, shadow: viewShadow, qa: viewQA, drills: viewDrills, search: viewSearch,
       ai: viewAI, prefs: viewSettings,
     };
     markNav(name === 'unit' || name === 'day' ? 'units' : name === 'scene' ? 'scenes' : name);
@@ -591,6 +608,14 @@
   }
 
   /* ═════════════ 首页 ═════════════ */
+  function chart30() {
+    const days = []; for (let i = 29; i >= 0; i--) days.push(addDays(today(), -i));
+    const mins = days.map((d) => Math.round(((S.log[d] && S.log[d].sec) || 0) / 60));
+    const max = Math.max(30, ...mins);
+    const total = mins.reduce((a, b) => a + b, 0), active = mins.filter((m) => m > 0).length;
+    return `<div class="chart30" role="img" aria-label="最近30天每天练习分钟数">${days.map((d, i) => `<div class="c30" title="${d}：${mins[i]} 分钟"><div class="c30b ${mins[i] >= 30 ? 'ok' : ''}" style="height:${Math.round((mins[i] / max) * 100)}%"></div></div>`).join('')}<div class="c30line" style="bottom:${Math.round((30 / max) * 100)}%"><span>30 分钟</span></div></div>
+      <p class="muted small">30 天里练了 ${active} 天，共 ${total} 分钟。绿色 = 达到每天 30 分钟。</p>`;
+  }
   function viewHome() {
     const n = currentDay(), info = dayInfo(n);
     const due = dueIds().length;
@@ -622,6 +647,10 @@
         <div class="stat"><b>${doneCount}</b><span>已完成天数</span></div>
         <div class="stat"><b>${Object.keys(S.srs).length}</b><span>复习库句子</span></div>
         <div class="stat"><b>${Math.round(Object.values(S.log).reduce((a, l) => a + (l.sec || 0), 0) / 60)}</b><span>累计分钟</span></div>
+      </section>
+      <section class="card">
+        <h2>最近 30 天练习时间</h2>
+        ${chart30()}
       </section>
       <section class="card">
         <h2>${WEEKS.length} 周路线图</h2>
@@ -714,7 +743,7 @@
         r.nextElementSibling.textContent = r.value;
       }));
     } else {
-      const recs = K.aiScenarios.filter((s) => ({ 1: ['free-jon', 'friend-new'], 2: ['cafe', 'restaurant', 'taxi'], 3: ['friend-new', 'coworker'], 4: ['free-ban'], 5: ['professor', 'senior', 'phone'], 6: ['free-jon', 'interview'], 7: ['realestate', 'doctor', 'phone'], 8: ['halmeoni', 'date', 'complaint'], 9: ['parents', 'free-jon'], 10: ['debate', 'friend-new'], 11: ['classmate', 'secondhand', 'complaint'], 12: ['interview-hard', 'busan', 'free-ban'], 13: ['free-jon', 'friend-new'], 14: ['debate', 'free-ban'], 15: ['classmate', 'trainer'], 16: ['interview-hard', 'doctor', 'free-jon'] }[info.w] || ['free-jon']).includes(s.id));
+      const recs = K.aiScenarios.filter((s) => ({ 1: ['free-jon', 'friend-new'], 2: ['cafe', 'restaurant', 'taxi'], 3: ['friend-new', 'coworker'], 4: ['free-ban'], 5: ['professor', 'senior', 'phone'], 6: ['free-jon', 'interview'], 7: ['realestate', 'doctor', 'phone'], 8: ['halmeoni', 'date', 'complaint'], 9: ['parents', 'free-jon'], 10: ['debate', 'friend-new'], 11: ['classmate', 'secondhand', 'complaint'], 12: ['interview-hard', 'busan', 'free-ban'], 13: ['free-jon', 'friend-new'], 14: ['debate', 'free-ban'], 15: ['classmate', 'trainer'], 16: ['interview-hard', 'doctor', 'free-jon'], 17: ['free-jon', 'realestate'], 18: ['debate', 'free-ban'], 19: ['senior', 'classmate', 'parents'], 20: ['free-jon', 'free-ban', 'interview-hard'] }[info.w] || ['free-jon']).includes(s.id));
       el = setView(`${head}<h1 class="page-title">自由对话日</h1>
         <section class="card"><p>今天不学新东西。<b>至少 20 分钟</b>不间断的对话：首选真人（语言交换、韩国朋友、店员闲聊），没有真人就用 AI 陪练。把这周学的句块全部用出来。</p>
           <h3>推荐的 AI 陪练情景</h3>
@@ -860,7 +889,7 @@
     const roleInfo = () => { $('.role-info', el).innerHTML = `你扮演：<b>${esc(dlg.roles[me])}</b>　对方：${esc(dlg.roles[other()])}`; };
     roleInfo();
     script.innerHTML = dlg.lines.map(([r, ko, zh]) => `<div class="sline"><b>${esc(dlg.roles[r])}</b><span lang="ko">${esc(ko)}</span><small>${esc(zh)}</small></div>`).join('');
-    $$('.sline', script).forEach((s, i) => { s.onclick = () => speak(dlg.lines[i][1]); });
+    $$('.sline', script).forEach((s, i) => { s.onclick = () => speak(dlg.lines[i][1]); s.appendChild(starBtn(dlg.lines[i][1], dlg.lines[i][2], '对话')); });
     $('.show-script', el).onchange = (e) => script.classList.toggle('hidden', !e.target.checked);
     let run = 0;
     $('.listen-all', el).onclick = async () => {
@@ -1090,6 +1119,7 @@
         chk.start();
       };
       $('.pb-acts', row).appendChild(mic);
+      $('.pb-acts', row).appendChild(starBtn(ko, zh, '短文 · ' + p.title));
       $('.ko', row).onclick = () => { row.classList.add('reveal'); speak(ko); };
       box.appendChild(row);
       return row;
@@ -1163,6 +1193,7 @@
         <div class="qa-ans"><div class="ko" lang="ko">${esc(x.a)}</div><div class="zh">${esc(x.azh)}</div><div class="acts"></div></div></details>`);
       $('.acts', row).appendChild(speakBtn(x.q, '▶ 问题'));
       $('.acts', row).appendChild(speakBtn(x.a, '▶ 参考回答'));
+      $('.acts', row).appendChild(starBtn(x.a, x.azh, '百问 · ' + x.q));
       row.addEventListener('toggle', () => { if (row.open && !$('.check', row)) $('.qa-ans', row).appendChild(speakCheck(x.a)); });
       list.appendChild(row);
     });
@@ -1211,6 +1242,236 @@
     $('.qa-start', el).onclick = start;
   }
 
+  /* ═════════════ 数字转韩语 ═════════════ */
+  const SINO_D = ['', '일', '이', '삼', '사', '오', '육', '칠', '팔', '구'];
+  function sino4(n) { // 0-9999
+    let out = '';
+    [[1000, '천'], [100, '백'], [10, '십']].forEach(([v, u]) => { const d = Math.floor(n / v) % 10; if (d) out += (d === 1 ? '' : SINO_D[d]) + u; });
+    const d = n % 10; if (d) out += SINO_D[d];
+    return out;
+  }
+  function sino(n) {
+    if (n === 0) return '영';
+    const eok = Math.floor(n / 1e8), man = Math.floor((n % 1e8) / 1e4), rest = n % 1e4;
+    let out = '';
+    if (eok) out += sino4(eok) + '억 ';
+    if (man) out += (man === 1 ? '' : sino4(man)) + '만 ';
+    if (rest) out += sino4(rest);
+    return out.trim();
+  }
+  const NAT1 = ['', '하나', '둘', '셋', '넷', '다섯', '여섯', '일곱', '여덟', '아홉'];
+  const NAT1C = ['', '한', '두', '세', '네', '다섯', '여섯', '일곱', '여덟', '아홉'];
+  const NAT10 = ['', '열', '스물', '서른', '마흔', '쉰', '예순', '일흔', '여든', '아흔'];
+  function native(n, counter) { // 1-99；counter=true 时用量词前形式（한/두/세/네/스무）
+    const t = Math.floor(n / 10), o = n % 10;
+    if (counter && n === 20) return '스무';
+    return NAT10[t] + (counter ? NAT1C[o] : NAT1[o]);
+  }
+  const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  const fmtNum = (n) => n.toLocaleString('en-US');
+  const NUM_TYPES = {
+    price: { label: '价格', gen() {
+      const n = pick([rnd(1, 9) * 100, rnd(10, 99) * 100, rnd(1, 50) * 1000 + pick([0, 500]), rnd(10, 300) * 1000, rnd(1, 9) * 10000 + rnd(0, 9) * 1000]);
+      return { show: fmtNum(n) + '원', hint: '说出价格', ans: [sino(n) + ' 원'], dig: [n + '원'] };
+    } },
+    time: { label: '时间', gen() {
+      const hh = rnd(1, 12), mm = pick([0, 5, 10, 15, 20, 25, 30, 40, 45, 50, 55]);
+      const base = native(hh, true) + ' 시';
+      const ans = mm === 0 ? [base] : mm === 30 ? [base + ' 삼십 분', base + ' 반'] : [base + ' ' + sino(mm) + ' 분'];
+      const dig = mm === 0 ? [hh + '시'] : mm === 30 ? [hh + '시30분', hh + '시반'] : [hh + '시' + mm + '분'];
+      return { show: hh + ':' + pad(mm), hint: '说出时间（时用固有词，分用汉字词）', ans, dig };
+    } },
+    date: { label: '日期', gen() {
+      const m = rnd(1, 12), d = rnd(1, 31);
+      const mon = m === 6 ? '유월' : m === 10 ? '시월' : sino(m) + '월';
+      return { show: m + '月' + d + '日', hint: '说出日期（注意 6월=유월、10월=시월）', ans: [mon + ' ' + sino(d) + ' 일'], dig: [m + '월' + d + '일'] };
+    } },
+    phone: { label: '电话', gen() {
+      const a = String(rnd(1000, 9999)), b = String(rnd(1000, 9999));
+      const say = (str) => str.split('').map((c) => (c === '0' ? '공' : SINO_D[+c])).join('');
+      return { show: '010-' + a + '-' + b, hint: '说出电话号码（0 读"공"，"-" 读"에"）', ans: ['공일공 에 ' + say(a) + ' 에 ' + say(b), '공일공 ' + say(a) + ' ' + say(b)], dig: ['010' + a + b] };
+    } },
+    age: { label: '年龄', gen() {
+      const n = rnd(1, 69);
+      return { show: n + ' 岁', hint: '说出年龄（固有词 + 살）', ans: [native(n, true) + ' 살'], dig: [n + '살'] };
+    } },
+    count: { label: '个数', gen() {
+      const [noun, zh, ctr] = pick([['사과', '苹果', '개'], ['커피', '咖啡', '잔'], ['맥주', '啤酒', '병'], ['사람', '人', '명'], ['책', '书', '권'], ['고양이', '猫', '마리'], ['티셔츠', 'T恤', '장'], ['연필', '铅笔', '자루']]);
+      const n = rnd(1, 20);
+      return { show: zh + ' ' + n + ' ' + ({ '개': '个', '잔': '杯', '병': '瓶', '명': '个', '권': '本', '마리': '只', '장': '件', '자루': '支' })[ctr], hint: '说出数量（固有词 + 量词）', ans: [noun + ' ' + native(n, true) + ' ' + ctr], dig: [noun + n + ctr] };
+    } },
+    room: { label: '楼层房号', gen() {
+      const f = rnd(1, 25), r = f * 100 + rnd(1, 12);
+      return { show: f + '层 ' + r + '号', hint: '说出楼层和房号（汉字词）', ans: [sino(f) + ' 층 ' + sino(r) + ' 호'], dig: [f + '층' + r + '호'] };
+    } },
+    year: { label: '年份', gen() {
+      const y = pick([rnd(1980, 2009), rnd(2010, 2030)]);
+      return { show: y + '年', hint: '说出年份', ans: [sino(y) + ' 년'], dig: [y + '년'] };
+    } },
+  };
+
+  /* ═════════════ 专项练习（数字 / 听辨 / 语体） ═════════════ */
+  function viewDrills(which) {
+    if (which === 'numbers') return viewNumbers();
+    if (which === 'listen') return viewListen();
+    if (which === 'styles') return viewStyles();
+    setView(`<h1 class="page-title">专项练习 <small>不用 AI，随时练</small></h1>
+      <div class="unit-list">
+        <a class="unit-item" href="#drills-numbers"><span class="u-no">数</span><span class="u-t"><b>数字快练</b><small>价格、时间、日期、电话、年龄、个数、房号、年份——随机生成，看数字说韩语，自动判对错</small></span><span class="u-s">›</span></a>
+        <a class="unit-item" href="#drills-listen"><span class="u-no">听</span><span class="u-t"><b>听辨练习</b><small>${(K.pairs || []).length} 组易混音（가/까/카、반/방、어/오……），听音选字</small></span><span class="u-s">›</span></a>
+        <a class="unit-item" href="#drills-styles"><span class="u-no">语</span><span class="u-t"><b>语体转换</b><small>${(K.styles || []).length} 句话 × 3 种语体（해요体 / 반말 / 합니다体），练到秒切</small></span><span class="u-s">›</span></a>
+        <a class="unit-item" href="#search"><span class="u-no">搜</span><span class="u-t"><b>全站搜索</b><small>在所有课程、情景、句库、短文、百问里搜韩语或中文</small></span><span class="u-s">›</span></a>
+      </div>`);
+  }
+
+  function viewNumbers() {
+    let type = 'all', cur = null, right = 0, total = 0;
+    const el = setView(`<div class="eyebrow">专项练习</div><h1 class="page-title">数字快练</h1>
+      <div class="tip card">数字是口语里最容易卡壳的地方。看到数字后<b>马上读出来</b>（语音识别或键盘语音输入都可以），系统自动判断对错。规则：钱/日期/分钟/电话/楼层用<b>汉字词</b>（일 이 삼），时/个数/年龄用<b>固有词</b>（한 두 세）。</div>
+      <div class="chips filter num-types"><a class="chip on" href="javascript:void 0" data-t="all">全部</a>${Object.entries(NUM_TYPES).map(([k, v]) => `<a class="chip" href="javascript:void 0" data-t="${k}">${v.label}</a>`).join('')}</div>
+      <div class="card num-box"></div>`);
+    const box = $('.num-box', el);
+    function next() {
+      const keys = Object.keys(NUM_TYPES);
+      const t = type === 'all' ? pick(keys) : type;
+      cur = NUM_TYPES[t].gen(); cur.t = t;
+      box.innerHTML = `<div class="prog">${NUM_TYPES[t].label} · 已答对 ${right} / ${total}</div>
+        <div class="num-show">${esc(cur.show)}</div>
+        <div class="muted small">${esc(cur.hint)}</div>
+        <div class="slot"></div>
+        <div class="answer hidden"><div class="ko" lang="ko">${esc(cur.ans[0])}</div>${cur.ans.length > 1 ? `<div class="muted small">也可以说：${esc(cur.ans.slice(1).join(' / '))}</div>` : ''}</div>
+        <div class="check-row center-row"><button class="btn ghost show">看答案</button><button class="btn primary nxt">下一个 ›</button></div>`;
+      const ans = $('.answer', box);
+      ans.appendChild(speakBtn(cur.ans[0], '▶'));
+      let counted = false;
+      const reveal = () => { if (ans.classList.contains('hidden')) { ans.classList.remove('hidden'); speak(cur.ans[0]); } };
+      const chk = speakCheck(cur.ans.concat(cur.dig).join(' / '), {
+        onScore: (sc) => { if (!counted) { counted = true; total++; if (sc >= 85) right++; } reveal(); $('.prog', box).textContent = NUM_TYPES[t].label + ' · 已答对 ' + right + ' / ' + total; },
+        onSelf: reveal,
+      });
+      $('.slot', box).appendChild(chk);
+      $('.show', box).onclick = reveal;
+      $('.nxt', box).onclick = () => { stopListen(); stopSpeak(); next(); };
+      chk.start();
+    }
+    $$('.num-types .chip', el).forEach((c) => (c.onclick = () => { $$('.num-types .chip', el).forEach((x) => x.classList.remove('on')); c.classList.add('on'); type = c.dataset.t; next(); }));
+    next();
+  }
+
+  function viewListen() {
+    const groups = K.pairs || [];
+    let right = 0, total = 0, cur = null;
+    const el = setView(`<div class="eyebrow">专项练习</div><h1 class="page-title">听辨练习</h1>
+      <div class="tip card">听一个词，选出你听到的是哪一个。听不出来就多点几次"再听一遍"，然后用"慢速"。听得出来，才说得出来。<br><span class="small muted">提示：机器语音和真人有差别，这里练的是"耳朵对这几组音的敏感度"。</span></div>
+      <div class="card listen-box"></div>`);
+    const box = $('.listen-box', el);
+    function next() {
+      const g = pick(groups);
+      const target = pick(g.items);
+      cur = { g, target };
+      box.innerHTML = `<div class="prog">${esc(g.title)} · 正确 ${right} / ${total}</div>
+        <div class="check-row center-row"><button class="btn primary big play">🔊 再听一遍</button><button class="btn slow">🐢 慢速</button></div>
+        <div class="opts">${shuffle(g.items).map((it) => `<button class="btn opt" data-w="${esc(it[0])}"><b lang="ko">${esc(it[0])}</b><small>${esc(it[1])}</small></button>`).join('')}</div>
+        <div class="fb-line"></div>
+        <div class="check-row center-row"><button class="btn ghost nxt hidden">下一个 ›</button></div>`;
+      $('.play', box).onclick = () => speak(target[0], 0.9);
+      $('.slow', box).onclick = () => speak(target[0], 0.6);
+      let answered = false;
+      $$('.opt', box).forEach((b) => (b.onclick = () => {
+        if (answered) { speak(b.dataset.w, 0.85); return; }
+        answered = true; total++;
+        const ok = b.dataset.w === target[0];
+        if (ok) right++;
+        b.classList.add(ok ? 'right' : 'wrong');
+        $$('.opt', box).forEach((x) => { if (x.dataset.w === target[0]) x.classList.add('right'); });
+        $('.fb-line', box).innerHTML = ok ? '<span class="score great">✓ 听对了</span>' : `<span class="score bad">✗ 刚才播放的是「${esc(target[0])}」</span> <span class="muted small">点每个选项可以对比听</span>`;
+        $('.prog', box).textContent = g.title + ' · 正确 ' + right + ' / ' + total;
+        $('.nxt', box).classList.remove('hidden');
+        logRep();
+      }));
+      $('.nxt', box).onclick = next;
+      speak(target[0], 0.9);
+    }
+    next();
+  }
+
+  function viewStyles() {
+    const items = K.styles || [];
+    let order = shuffle(items.map((_, i) => i)), idx = 0;
+    const el = setView(`<div class="eyebrow">专项练习</div><h1 class="page-title">语体转换</h1>
+      <div class="tip card">同一句话，对朋友（반말）、对一般人（해요体）、在正式场合（합니다体）说法不同。看中文，<b>三种语体依次说出来</b>，每种都会打分。熟练以后挑战一口气连说三种。</div>
+      <div class="card style-box"></div>`);
+    const box = $('.style-box', el);
+    const LABELS = [['해요体', '礼貌（一般人、店员、同事）'], ['반말', '半语（朋友、晚辈）'], ['합니다体', '正式（会议、面试、长辈、广播）']];
+    function render() {
+      if (idx >= order.length) { order = shuffle(order); idx = 0; }
+      const it = items[order[idx]];
+      box.innerHTML = `<div class="prog">${idx + 1} / ${items.length}</div><div class="cue">${esc(it[0])}</div><div class="style-rows"></div>
+        <div class="check-row center-row"><button class="btn ghost show-all">全部显示</button><button class="btn primary nxt">下一句 ›</button></div>`;
+      const rows = $('.style-rows', box);
+      LABELS.forEach(([lab, desc], k) => {
+        const ko = it[k + 1];
+        const row = h(`<div class="style-row"><div class="style-lab"><b>${lab}</b><small>${desc}</small></div><div class="ko hint" lang="ko">${esc(ko)}</div><div class="acts"></div></div>`);
+        $('.acts', row).appendChild(speakBtn(ko, '▶'));
+        $('.acts', row).appendChild(starBtn(ko, it[0] + '（' + lab + '）', '语体转换'));
+        row.appendChild(speakCheck(ko, { onScore: () => row.classList.add('reveal'), onSelf: () => row.classList.add('reveal') }));
+        rows.appendChild(row);
+      });
+      $('.show-all', box).onclick = () => $$('.style-row', box).forEach((r) => r.classList.add('reveal'));
+      $('.nxt', box).onclick = () => { stopListen(); stopSpeak(); idx++; render(); };
+    }
+    render();
+  }
+
+  /* ═════════════ 全站搜索 ═════════════ */
+  let SEARCH_INDEX = null;
+  function buildIndex() {
+    const idx = [];
+    const add = (ko, zh, src, href) => idx.push({ ko, zh: zh || '', src, href, k: String(ko).toLowerCase(), z: String(zh || '').toLowerCase() });
+    UNITS.forEach((u) => {
+      const tag = `第${u.id.slice(1)}课 ${u.title}`;
+      u.chunks.forEach((c) => add(c[0], c[1], tag + ' · 句块', '#unit-' + u.id));
+      u.dialogue.lines.forEach((l) => add(l[1], l[2], tag + ' · 对话', '#unit-' + u.id));
+      u.drill.items.forEach((d) => add(d[1], d[0], tag + ' · 快反', '#unit-' + u.id));
+    });
+    SCENES.forEach((sc) => sc.lines.forEach((l) => add(l[1], l[2], '情景 · ' + sc.title, '#scene-' + sc.id)));
+    (K.phrasebank || []).forEach((c, ci) => c.items.forEach((it) => add(it[0], it[1] + (it[2] ? '（' + it[2] + '）' : ''), '句库 · ' + c.cat, '#phrases')));
+    PASSAGES.forEach((p) => p.sentences.forEach((x) => add(x[0], x[1], '短文 · ' + p.title, '#shadow-' + p.id)));
+    QA.forEach((x) => { add(x.q, x.qzh, '百问 · ' + x.cat, '#qa-' + x.ci); add(x.a, x.azh, '百问 · 参考回答', '#qa-' + x.ci); });
+    (K.styles || []).forEach((it) => [1, 2, 3].forEach((k) => add(it[k], it[0], '语体转换', '#drills-styles')));
+    (K.pronunciation || []).forEach((r) => add(r.sentence[0], r.sentence[2], '发音 · ' + r.title, '#pron'));
+    return idx;
+  }
+  let lastQuery = '';
+  function viewSearch() {
+    if (!SEARCH_INDEX) SEARCH_INDEX = buildIndex();
+    const el = setView(`<h1 class="page-title">搜索 <small>${SEARCH_INDEX.length} 句</small></h1>
+      <div class="card"><label class="lbl" for="search-q">输入韩语或中文（例：거든요、点餐、医院、칭찬）</label>
+        <input type="text" id="search-q" class="sq" autocomplete="off" placeholder="搜索……"></div>
+      <div class="search-meta muted small"></div>
+      <div class="search-res"></div>`);
+    const input = $('.sq', el), res = $('.search-res', el), meta = $('.search-meta', el);
+    let timer = null;
+    const run = () => {
+      const q = input.value.trim().toLowerCase(); lastQuery = input.value;
+      res.innerHTML = '';
+      if (!q) { meta.textContent = ''; return; }
+      const hits = SEARCH_INDEX.filter((x) => x.k.includes(q) || x.z.includes(q));
+      meta.textContent = `找到 ${hits.length} 句${hits.length > 100 ? '，显示前 100 句' : ''}`;
+      hits.slice(0, 100).forEach((x) => {
+        const row = h(`<div class="pb-row card s-row"><div class="pb-main"><span class="ko" lang="ko">${esc(x.ko)}</span><span class="zh">${esc(x.zh)}</span><a class="s-src" href="${x.href}">${esc(x.src)} ›</a></div><div class="pb-acts"></div></div>`);
+        $('.pb-acts', row).appendChild(speakBtn(x.ko, '▶'));
+        $('.pb-acts', row).appendChild(starBtn(x.ko, x.zh, x.src));
+        $('.ko', row).onclick = () => speak(x.ko);
+        res.appendChild(row);
+      });
+    };
+    input.oninput = () => { clearTimeout(timer); timer = setTimeout(run, 200); };
+    input.value = lastQuery; run();
+    setTimeout(() => { try { input.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }, 50);
+  }
+
   /* ═════════════ 功能句库 ═════════════ */
   function viewPhrases() {
     const pb = K.phrasebank || [];
@@ -1234,6 +1495,7 @@
           chk.start();
         };
         $('.pb-acts', row).appendChild(mic);
+        $('.pb-acts', row).appendChild(starBtn(it[0], it[1], '句库 · ' + c.cat));
         $('.ko', row).onclick = () => { row.classList.add('reveal'); speak(it[0]); };
         list.appendChild(row);
       });
@@ -1494,5 +1756,5 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
   // 调试/测试用
-  window.__kss = { state: () => S, dayInfo, bestScore, diffHtml, UNITS, SCENES, TOTAL_DAYS };
+  window.__kss = { state: () => S, dayInfo, bestScore, diffHtml, UNITS, SCENES, TOTAL_DAYS, sino, native, NUM_TYPES };
 })();

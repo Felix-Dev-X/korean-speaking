@@ -33,6 +33,8 @@ for (const p of K.shadowing || []) {
 }
 for (const c of K.qa || []) for (const it of c.items) if (it.length < 4 || it.some((x) => !x)) err('百问百答缺字段：' + it[0]);
 for (const r of K.pronunciation) if (!r.examples.length || !r.sentence || r.sentence.length < 3) err('发音规则缺字段：' + r.title);
+for (const it of K.styles || []) if (it.length !== 4 || it.some((x) => !x)) err('语体转换缺字段：' + it[0]);
+for (const g of K.pairs || []) { if (g.items.length < 2) err('听辨组太小：' + g.title); if (new Set(g.items.map((x) => x[0])).size !== g.items.length) err('听辨组有重复：' + g.title); }
 const aids = new Set();
 for (const a of K.aiScenarios) { if (aids.has(a.id)) err('重复的 AI 情景 id ' + a.id); aids.add(a.id); }
 for (const a of K.aiScenarios) if (!['jon', 'ban', 'ai-ban'].includes(a.speech)) err(a.id + ' speech 无效');
@@ -45,7 +47,7 @@ console.log({
   情景: K.scenes.length, 情景对话行: count(K.scenes, (s) => s.lines.length),
   功能句: count(K.phrasebank, (c) => c.items.length), 句库分类: K.phrasebank.length,
   短文: (K.shadowing || []).length, 短文句子: count(K.shadowing || [], (p) => p.sentences.length),
-  百问百答: count(K.qa || [], (c) => c.items.length),
+  百问百答: count(K.qa || [], (c) => c.items.length), 语体转换: (K.styles || []).length, 听辨组: (K.pairs || []).length,
   发音规则: K.pronunciation.length, AI情景: K.aiScenarios.length,
 });
 if (errors) { console.error(errors + ' 个问题'); process.exit(1); } else console.log('✓ 数据检查通过');
