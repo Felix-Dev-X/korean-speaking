@@ -6,6 +6,8 @@ import { loadKSS } from './load-data.mjs';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const K = loadKSS();
+const ALL = K.units.slice().sort((a, b) => a.week - b.week || (+a.id.slice(1)) - (+b.id.slice(1)));
+const lessonNo = (u) => String(ALL.indexOf(u) + 1).padStart(2, '0');
 const out = path.join(root, 'lessons');
 fs.mkdirSync(out, { recursive: true });
 const cell = (s) => String(s || '').replace(/\|/g, '\\|');
@@ -13,14 +15,14 @@ const BANNER = '<!-- 本文件由 scripts/build-docs.mjs 从 app/data 自动生�
 
 // 每周讲义
 for (const w of K.weeks) {
-  const units = K.units.filter((u) => u.week === w.week);
+  const units = ALL.filter((u) => u.week === w.week);
   const base = (w.week - 1) * 7;
   let md = BANNER + `# 第 ${w.week} 周：${w.title}\n\n> ${w.goal}\n\n`;
   md += `| 天 | 内容 |\n|---|---|\n`;
-  units.forEach((u, i) => { md += `| 第 ${base + i + 1} 天 | 第 ${u.id.slice(1)} 课 · ${u.title}（${u.ko}） |\n`; });
-  md += `| 第 ${base + 5} 天 | 复习 + 现实任务 |\n| 第 ${base + 6} 天 | 周测 |\n| 第 ${base + 7} 天 | 自由对话日 |\n\n`;
+  units.forEach((u, i) => { md += `| 第 ${base + i + 1} 天 | 第 ${lessonNo(u)} 课 · ${u.title}（${u.ko}） |\n`; });
+  md += `| 第 ${base + 6} 天 | 复习 + 现实任务 |\n| 第 ${base + 7} 天 | 周测 + 本周复盘 |\n\n`;
   for (const u of units) {
-    md += `---\n\n## 第 ${u.id.slice(1)} 课　${u.title}　<small>${u.ko}</small>\n\n${u.goal}\n\n`;
+    md += `---\n\n## 第 ${lessonNo(u)} 课　${u.title}　<small>${u.ko}</small>\n\n${u.goal}\n\n`;
     md += `### ① 核心句块（每句跟读 3 遍，再遮住韩语看中文说）\n\n| # | 韩语 | 中文 | 要点 |\n|---|---|---|---|\n`;
     u.chunks.forEach((c, i) => { md += `| ${i + 1} | ${cell(c[0])} | ${cell(c[1])} | ${cell(c[2])} |\n`; });
     md += `\n### ② 情景对话：${u.dialogue.scene}\n\n你扮演：**${u.dialogue.roles[u.dialogue.me]}**（两个角色都要练）\n\n`;
@@ -29,10 +31,10 @@ for (const w of K.weeks) {
     for (const [cue, ko] of u.drill.items) md += `| ${cell(cue)} | ${cell(ko)} |\n`;
     md += `\n### ④ 独白任务（录音 ${u.mission.seconds >= 120 ? Math.round(u.mission.seconds / 60) + ' 分钟' : u.mission.seconds + ' 秒'}）\n\n${u.mission.prompt}\n\n可用表达：${u.mission.hints.map((x) => '`' + x + '`').join('　')}\n\n`;
   }
-  md += `---\n\n## 第 ${base + 5} 天：现实任务（必须在真实世界完成）\n\n${w.realMissions.map((m) => `- [ ] ${m}`).join('\n')}\n\n`;
-  md += `## 第 ${base + 6} 天：周测（每题录音，不看提示）\n\n${w.test.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\n`;
+  md += `---\n\n## 第 ${base + 6} 天：现实任务（必须在真实世界完成）\n\n${w.realMissions.map((m) => `- [ ] ${m}`).join('\n')}\n\n`;
+  md += `## 第 ${base + 7} 天：周测（每题录音，不看提示）\n\n${w.test.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\n`;
   md += `自评（各 1–5 分）：流利度 ___　准确度 ___　自然度 ___　反应速度 ___\n\n`;
-  md += `## 第 ${base + 7} 天：自由对话日\n\n至少 20 分钟不间断对话（真人优先，没有就用 AI 陪练），然后写复盘：最常卡壳的 3 句、最想记住的 3 个表达、下周要改的 1 个坏习惯。\n`;
+  md += `**本周复盘**：写下这周最常卡壳的 3 句、最想记住的 3 个表达、下周要改的 1 个坏习惯。\n`;
   fs.writeFileSync(path.join(out, `week-${w.week}.md`), md);
 }
 

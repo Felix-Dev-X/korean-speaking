@@ -16,7 +16,7 @@ for (const u of K.units) {
 }
 for (const w of K.weeks) {
   const n = K.units.filter((u) => u.week === w.week).length;
-  if (n !== 4) err(`第${w.week}周有 ${n} 课（应为4）`);
+  if (n !== 5) err(`第${w.week}周有 ${n} 课（应为5）`);
   if (w.realMissions.length < 3 || w.test.length < 4) err(`第${w.week}周任务/周测不足`);
 }
 const sids = new Set();

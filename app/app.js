@@ -11,7 +11,10 @@
   // 'artifact' = 发布在 claude.ai 的网页版：无麦克风；用手机键盘语音输入、用 Claude（sample）陪练、进度同步到账号（db）
   const ARTIFACT = window.KSS_ENV === 'artifact';
   const CLAUDE = ARTIFACT && window.claude && typeof window.claude.use === 'function' ? window.claude : null;
-  const UNITS = K.units.slice().sort((a, b) => a.id.localeCompare(b.id));
+  // 课程按周排序；每周 5 课（第 5 课是后来加的 u81-u100，按周插入）
+  const UNITS = K.units.slice().sort((a, b) => a.week - b.week || (+a.id.slice(1)) - (+b.id.slice(1)));
+  const UNITS_OF_WEEK = (w) => UNITS.filter((u) => u.week === w);
+  const lessonNo = (u) => pad(UNITS.indexOf(u) + 1);
   const WEEKS = K.weeks.slice().sort((a, b) => a.week - b.week);
   const SCENES = (K.scenes || []).slice().sort((a, b) => a.id.localeCompare(b.id));
   const PASSAGES = (K.shadowing || []).slice().sort((a, b) => a.id.localeCompare(b.id));
@@ -78,6 +81,7 @@
   const STORE_KEY = 'kss-v1';
   const defaults = () => ({
     v: 1,
+    schedule: 2,       // 2 = 每周 5 课 + 复习 + 周测
     startedAt: today(),
     daysDone: {},      // { dayNumber: 'YYYY-MM-DD' }
     unitsDone: {},     // { unitId: 'YYYY-MM-DD' }
@@ -92,11 +96,28 @@
     qaDone: {},        // { qaId: count }
     settings: { rate: 1, voiceURI: '', autoListen: true, apiKey: '', model: 'claude-opus-5-5', correction: true },
   });
+  /* 旧进度迁移：旧版每周 = 4 课 + 复习(第5天) + 周测(第6天) + 自由对话(第7天)；
+     新版每周 = 5 课 + 复习(第6天) + 周测(第7天)。课程完成记录（unitsDone）不变。 */
+  function migrate(o) {
+    if (!o || o.schedule === 2) return o;
+    const old = o.daysDone || {}, nd = {};
+    Object.keys(old).forEach((k) => {
+      const n = +k, w = Math.ceil(n / 7), d = ((n - 1) % 7) + 1;
+      if (d === 5) nd[(w - 1) * 7 + 6] = old[k];
+      else if (d === 6) nd[(w - 1) * 7 + 7] = old[k];
+    });
+    Object.keys(o.unitsDone || {}).forEach((uid) => {
+      const u = unitById(uid);
+      if (u) nd[(u.week - 1) * 7 + UNITS_OF_WEEK(u.week).indexOf(u) + 1] = o.unitsDone[uid];
+    });
+    o.daysDone = nd; o.schedule = 2;
+    return o;
+  }
   function load() {
     try {
       const raw = localStorage.getItem(STORE_KEY);
       if (raw) {
-        const o = JSON.parse(raw), d = defaults();
+        const o = migrate(JSON.parse(raw)), d = defaults();
         return Object.assign(d, o, { settings: Object.assign(d.settings, o.settings || {}) });
       }
     } catch (e) { /* 隐私模式等情况下忽略 */ }
@@ -132,7 +153,7 @@
       CLOUD.ref = ref; CLOUD.ready = true; CLOUD.state = 'on';
       const body = snap.exists ? snap.data() : null;
       if (body && typeof body.json === 'string' && (body.updatedAt || 0) > (S.updatedAt || 0)) {
-        const o = JSON.parse(body.json), d = defaults();
+        const o = migrate(JSON.parse(body.json)), d = defaults();
         S = Object.assign(d, o, { settings: Object.assign(d.settings, o.settings || {}) });
         saveLocal(); toast('已从你的账户同步学习进度'); route();
       } else if (!body || (S.updatedAt || 0) > (body.updatedAt || 0)) {
@@ -557,12 +578,11 @@
   function dayInfo(n) {
     const w = Math.ceil(n / 7), d = ((n - 1) % 7) + 1;
     const week = WEEKS[w - 1];
-    if (d <= 4) return { n, w, d, week, type: 'unit', unit: UNITS[(w - 1) * 4 + d - 1], label: '新课' };
-    if (d === 5) return { n, w, d, week, type: 'review', label: '复习+实战' };
-    if (d === 6) return { n, w, d, week, type: 'test', label: '周测' };
-    return { n, w, d, week, type: 'free', label: '自由对话' };
+    if (d <= 5) return { n, w, d, week, type: 'unit', unit: UNITS_OF_WEEK(w)[d - 1], label: '新课' };
+    if (d === 6) return { n, w, d, week, type: 'review', label: '复习+实战' };
+    return { n, w, d, week, type: 'test', label: '周测+复盘' };
   }
-  const dayOfUnit = (u) => { const i = UNITS.indexOf(u); return Math.floor(i / 4) * 7 + (i % 4) + 1; };
+  const dayOfUnit = (u) => (u.week - 1) * 7 + UNITS_OF_WEEK(u.week).indexOf(u) + 1;
   function currentDay() { for (let n = 1; n <= TOTAL_DAYS; n++) if (!S.daysDone[n]) return n; return TOTAL_DAYS; }
   function completeDay(n) {
     if (!S.daysDone[n]) { S.daysDone[n] = today(); save(); toast(`第 ${n} 天完成！🔥`); }
@@ -603,6 +623,10 @@
       ai: viewAI, prefs: viewSettings,
     };
     markNav(name === 'unit' || name === 'day' ? 'units' : name === 'scene' ? 'scenes' : name);
+    if (name && !R[name]) {
+      setView('<div class="card"><h2>找不到这个页面</h2><p>可能是网页刚更新、浏览器还在用旧版本。请<b>刷新页面</b>（手机下拉刷新；电脑按 Ctrl+Shift+R）。</p><a class="btn primary" href="#home">回首页</a></div>');
+      return;
+    }
     (R[name] || viewHome).call(null, arg);
     updateHeaderStats();
   }
@@ -620,14 +644,14 @@
     const n = currentDay(), info = dayInfo(n);
     const due = dueIds().length;
     const doneCount = Object.keys(S.daysDone).length;
-    const todayTitle = info.type === 'unit' ? `${info.unit.title}` : info.type === 'review' ? '复习 + 现实任务' : info.type === 'test' ? `第 ${info.w} 周周测` : '自由对话日（AI / 真人）';
+    const todayTitle = info.type === 'unit' ? `${info.unit.title}` : info.type === 'review' ? '复习 + 现实任务' : `第 ${info.w} 周周测 + 本周复盘`;
     let grid = '';
     for (let w = 1; w <= WEEKS.length; w++) {
       grid += `<div class="wk"><div class="wk-l">W${w}</div>`;
       for (let d = 1; d <= 7; d++) {
         const dn = (w - 1) * 7 + d, di = dayInfo(dn);
         const cls = S.daysDone[dn] ? 'done' : dn === n ? 'now' : '';
-        const icon = di.type === 'unit' ? d : di.type === 'review' ? '复' : di.type === 'test' ? '测' : '聊';
+        const icon = di.type === 'unit' ? d : di.type === 'review' ? '复' : '测';
         grid += `<a class="dcell ${cls}" href="#day-${dn}" title="第${dn}天 · ${di.type === 'unit' ? di.unit.title : di.label}">${icon}</a>`;
       }
       grid += '</div>';
@@ -654,7 +678,7 @@
       </section>
       <section class="card">
         <h2>${WEEKS.length} 周路线图</h2>
-        <p class="muted small">数字 = 新课，复 = 复习+现实任务，测 = 周测，聊 = 自由对话。点任意一天都能进去练。</p>
+        <p class="muted small">每周 5 天新课（1–5），第 6 天复习 + 现实任务（复），第 7 天周测 + 复盘（测）。点任意一天都能进去练。</p>
         <div class="grid">${grid}</div>
       </section>
       <section class="card rules">
@@ -692,12 +716,11 @@
         <p class="muted">${esc(w.goal)}</p>
         <div class="unit-list">
           ${us.map((u) => `<a class="unit-item ${S.unitsDone[u.id] ? 'done' : ''}" href="#unit-${u.id}">
-            <span class="u-no">${u.id.slice(1)}</span>
+            <span class="u-no">${lessonNo(u)}</span>
             <span class="u-t"><b>${esc(u.title)}</b><small>${esc(u.ko)}</small></span>
             <span class="u-s">${S.unitsDone[u.id] ? '✅' : '›'}</span></a>`).join('')}
-          <a class="unit-item extra" href="#day-${(w.week - 1) * 7 + 5}"><span class="u-no">复</span><span class="u-t"><b>复习 + 现实任务</b></span><span class="u-s">${S.daysDone[(w.week - 1) * 7 + 5] ? '✅' : '›'}</span></a>
-          <a class="unit-item extra" href="#day-${(w.week - 1) * 7 + 6}"><span class="u-no">测</span><span class="u-t"><b>周测</b></span><span class="u-s">${S.daysDone[(w.week - 1) * 7 + 6] ? '✅' : '›'}</span></a>
-          <a class="unit-item extra" href="#day-${(w.week - 1) * 7 + 7}"><span class="u-no">聊</span><span class="u-t"><b>自由对话日</b></span><span class="u-s">${S.daysDone[(w.week - 1) * 7 + 7] ? '✅' : '›'}</span></a>
+          <a class="unit-item extra" href="#day-${(w.week - 1) * 7 + 6}"><span class="u-no">复</span><span class="u-t"><b>复习 + 现实任务</b></span><span class="u-s">${S.daysDone[(w.week - 1) * 7 + 6] ? '✅' : '›'}</span></a>
+          <a class="unit-item extra" href="#day-${(w.week - 1) * 7 + 7}"><span class="u-no">测</span><span class="u-t"><b>周测 + 本周复盘</b></span><span class="u-s">${S.daysDone[(w.week - 1) * 7 + 7] ? '✅' : '›'}</span></a>
         </div>
       </section>`;
     }).join('');
@@ -729,33 +752,25 @@
         </section>${doneBtn}`);
       $$('.missions input', el).forEach((cb) => (cb.onchange = () => { S.missions[cb.dataset.k] = cb.checked; save(); }));
     } else if (info.type === 'test') {
-      el = setView(`${head}<h1 class="page-title">第 ${info.w} 周周测</h1>
+      el = setView(`${head}<h1 class="page-title">第 ${info.w} 周周测 + 本周复盘</h1>
         <section class="card"><p>每道题都<b>录音</b>，不看任何提示，一口气说完。用 AI 批改，或者自己回听后按下面的标准打分。</p>
         <div class="rubric"><b>自评标准（每项 1–5 分）</b>：流利度（停顿是否超过 3 秒）· 准确度（语法、敬语）· 自然度（像不像韩国人说话）· 任务完成度</div></section>
         <div class="tests"></div>
+        <section class="card"><h2>本周复盘</h2>
+          <p class="muted">写下：这周最常卡壳的 3 句话、最想记住的 3 个表达、下周要改的 1 个坏习惯。</p>
+          <textarea class="note" id="week-note" rows="5" placeholder="例：1. 点单时不会说“少冰” → 얼음 적게 주세요">${esc(S.notes[info.w] || '')}</textarea>
+        </section>
         <section class="card"><h2>本周自评</h2>
           <div class="selfscore">${['流利度', '准确度', '自然度', '反应速度'].map((k, i) => `<label>${k} <input type="range" min="1" max="5" value="${(S.notes['score' + info.w] || [])[i] || 3}" data-i="${i}"><span>${(S.notes['score' + info.w] || [])[i] || 3}</span></label>`).join('')}</div>
         </section>${doneBtn}`);
       const box = $('.tests', el);
       info.week.test.forEach((t, i) => { const r = recorder(`第 ${i + 1} 题：${t}`, { seconds: 90 }); box.appendChild(r); onLeave(r.cleanup); });
+      const ta = $('.note', el);
+      ta.oninput = () => { S.notes[info.w] = ta.value; save(); };
       $$('.selfscore input', el).forEach((r) => (r.oninput = () => {
         const arr = S.notes['score' + info.w] || [3, 3, 3, 3]; arr[+r.dataset.i] = +r.value; S.notes['score' + info.w] = arr; save();
         r.nextElementSibling.textContent = r.value;
       }));
-    } else {
-      const recs = K.aiScenarios.filter((s) => ({ 1: ['free-jon', 'friend-new'], 2: ['cafe', 'restaurant', 'taxi'], 3: ['friend-new', 'coworker'], 4: ['free-ban'], 5: ['professor', 'senior', 'phone'], 6: ['free-jon', 'interview'], 7: ['realestate', 'doctor', 'phone'], 8: ['halmeoni', 'date', 'complaint'], 9: ['parents', 'free-jon'], 10: ['debate', 'friend-new'], 11: ['classmate', 'secondhand', 'complaint'], 12: ['interview-hard', 'busan', 'free-ban'], 13: ['free-jon', 'friend-new'], 14: ['debate', 'free-ban'], 15: ['classmate', 'trainer'], 16: ['interview-hard', 'doctor', 'free-jon'], 17: ['free-jon', 'realestate'], 18: ['debate', 'free-ban'], 19: ['senior', 'classmate', 'parents'], 20: ['free-jon', 'free-ban', 'interview-hard'] }[info.w] || ['free-jon']).includes(s.id));
-      el = setView(`${head}<h1 class="page-title">自由对话日</h1>
-        <section class="card"><p>今天不学新东西。<b>至少 20 分钟</b>不间断的对话：首选真人（语言交换、韩国朋友、店员闲聊），没有真人就用 AI 陪练。把这周学的句块全部用出来。</p>
-          <h3>推荐的 AI 陪练情景</h3>
-          <div class="scn-grid">${recs.map((s) => `<a class="scn" href="#ai-${s.id}"><span class="i">${s.icon}</span><b>${esc(s.title)}</b></a>`).join('')}</div>
-          <p class="muted small">没有 API Key？到「AI 陪练」页复制提示词，粘贴到 Claude App 里开启语音对话，效果一样。</p>
-        </section>
-        <section class="card"><h2>本周复盘</h2>
-          <p class="muted">写下：这周最常卡壳的3句话、最想记住的3个表达、下周要改的1个坏习惯。</p>
-          <textarea class="note" rows="6" placeholder="例：1. 点单时不会说"少冰"→ 얼음 적게 주세요 …">${esc(S.notes[info.w] || '')}</textarea>
-        </section>${doneBtn}`);
-      const ta = $('.note', el);
-      ta.oninput = () => { S.notes[info.w] = ta.value; save(); };
     }
     $('.done-day', el).onclick = () => { completeDay(n); location.hash = '#home'; };
   }
@@ -767,7 +782,7 @@
     const n = dayN || dayOfUnit(u);
     const steps = S.unitSteps[u.id] || (S.unitSteps[u.id] = {});
     const el = setView(`
-      <div class="eyebrow">第 ${n} 天 · 第 ${u.week} 周 · 第 ${u.id.slice(1)} 课</div>
+      <div class="eyebrow">第 ${n} 天 · 第 ${u.week} 周 · 第 ${lessonNo(u)} 课</div>
       <h1 class="page-title">${esc(u.title)} <small lang="ko">${esc(u.ko)}</small></h1>
       <p class="goal">${esc(u.goal)}</p>
       <div class="tabs">${STEPS.map(([k, t]) => `<button class="tab" data-k="${k}">${t}${steps[k] ? ' ✓' : ''}</button>`).join('')}</div>
@@ -1430,7 +1445,7 @@
     const idx = [];
     const add = (ko, zh, src, href) => idx.push({ ko, zh: zh || '', src, href, k: String(ko).toLowerCase(), z: String(zh || '').toLowerCase() });
     UNITS.forEach((u) => {
-      const tag = `第${u.id.slice(1)}课 ${u.title}`;
+      const tag = `第${lessonNo(u)}课 ${u.title}`;
       u.chunks.forEach((c) => add(c[0], c[1], tag + ' · 句块', '#unit-' + u.id));
       u.dialogue.lines.forEach((l) => add(l[1], l[2], tag + ' · 对话', '#unit-' + u.id));
       u.drill.items.forEach((d) => add(d[1], d[0], tag + ' · 快反', '#unit-' + u.id));
