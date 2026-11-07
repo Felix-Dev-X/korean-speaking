@@ -6,7 +6,9 @@ import { loadKSS } from './load-data.mjs';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const K = loadKSS();
-const ALL = K.units.slice().sort((a, b) => a.week - b.week || (+a.id.slice(1)) - (+b.id.slice(1)));
+const ORDER = K.unitOrder || [];
+const ordIdx = (u) => { const i = ORDER.indexOf(u.id); return i < 0 ? 1e6 + (+u.id.slice(1)) : i; };
+const ALL = K.units.slice().sort((a, b) => a.week - b.week || ordIdx(a) - ordIdx(b));
 const lessonNo = (u) => String(ALL.indexOf(u) + 1).padStart(2, '0');
 const out = path.join(root, 'lessons');
 fs.mkdirSync(out, { recursive: true });

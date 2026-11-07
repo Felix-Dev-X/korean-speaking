@@ -12,7 +12,9 @@
   const ARTIFACT = window.KSS_ENV === 'artifact';
   const CLAUDE = ARTIFACT && window.claude && typeof window.claude.use === 'function' ? window.claude : null;
   // 课程按周排序；每周 5 课（第 5 课是后来加的 u81-u100，按周插入）
-  const UNITS = K.units.slice().sort((a, b) => a.week - b.week || (+a.id.slice(1)) - (+b.id.slice(1)));
+  const ORDER = K.unitOrder || [];
+  const ordIdx = (u) => { const i = ORDER.indexOf(u.id); return i < 0 ? 1e6 + (+u.id.slice(1)) : i; };
+  const UNITS = K.units.slice().sort((a, b) => a.week - b.week || ordIdx(a) - ordIdx(b));
   const UNITS_OF_WEEK = (w) => UNITS.filter((u) => u.week === w);
   const lessonNo = (u) => pad(UNITS.indexOf(u) + 1);
   const WEEKS = K.weeks.slice().sort((a, b) => a.week - b.week);
@@ -583,7 +585,8 @@
     return { n, w, d, week, type: 'test', label: '周测+复盘' };
   }
   const dayOfUnit = (u) => (u.week - 1) * 7 + UNITS_OF_WEEK(u.week).indexOf(u) + 1;
-  function currentDay() { for (let n = 1; n <= TOTAL_DAYS; n++) if (!S.daysDone[n]) return n; return TOTAL_DAYS; }
+  function isDayDone(n) { const di = dayInfo(n); return di.type === 'unit' ? !!(di.unit && S.unitsDone[di.unit.id]) : !!S.daysDone[n]; }
+  function currentDay() { for (let n = 1; n <= TOTAL_DAYS; n++) if (!isDayDone(n)) return n; return TOTAL_DAYS; }
   function completeDay(n) {
     if (!S.daysDone[n]) { S.daysDone[n] = today(); save(); toast(`第 ${n} 天完成！🔥`); }
   }
@@ -643,14 +646,14 @@
   function viewHome() {
     const n = currentDay(), info = dayInfo(n);
     const due = dueIds().length;
-    const doneCount = Object.keys(S.daysDone).length;
+    let doneCount = 0; for (let k = 1; k <= TOTAL_DAYS; k++) if (isDayDone(k)) doneCount++;
     const todayTitle = info.type === 'unit' ? `${info.unit.title}` : info.type === 'review' ? '复习 + 现实任务' : `第 ${info.w} 周周测 + 本周复盘`;
     let grid = '';
     for (let w = 1; w <= WEEKS.length; w++) {
       grid += `<div class="wk"><div class="wk-l">W${w}</div>`;
       for (let d = 1; d <= 7; d++) {
         const dn = (w - 1) * 7 + d, di = dayInfo(dn);
-        const cls = S.daysDone[dn] ? 'done' : dn === n ? 'now' : '';
+        const cls = isDayDone(dn) ? 'done' : dn === n ? 'now' : '';
         const icon = di.type === 'unit' ? d : di.type === 'review' ? '复' : '测';
         grid += `<a class="dcell ${cls}" href="#day-${dn}" title="第${dn}天 · ${di.type === 'unit' ? di.unit.title : di.label}">${icon}</a>`;
       }

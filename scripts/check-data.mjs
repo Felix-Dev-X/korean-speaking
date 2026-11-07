@@ -19,6 +19,9 @@ for (const w of K.weeks) {
   if (n !== 5) err(`第${w.week}周有 ${n} 课（应为5）`);
   if (w.realMissions.length < 3 || w.test.length < 4) err(`第${w.week}周任务/周测不足`);
 }
+const ord = K.unitOrder || [];
+if (ord.length !== K.units.length || new Set(ord).size !== ord.length) err('课程顺序表（order.js）和课程数量不一致或有重复');
+for (const id of ord) { const u = K.units.find((x) => x.id === id); if (!u) err('顺序表里有不存在的课：' + id); else if (u.week !== Math.floor(ord.indexOf(id) / 5) + 1) err(id + ' 在顺序表里的位置和它的周数不一致'); }
 const sids = new Set();
 for (const s of K.scenes) {
   if (sids.has(s.id)) err('重复的情景 id ' + s.id); sids.add(s.id);

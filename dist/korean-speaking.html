@@ -5671,6 +5671,38 @@ KSS.units.push(
 
 </script>
 <script>
+/* 韩语口语特训 · 课程顺序
+ * 课号（第 01–100 课）按这里的顺序排。每周 5 课。
+ * 后来新增的课（u81–u100）插在每周合适的位置，保证系列课连续（如 口语句尾①②③），
+ * 并让每周的"总结课"（毕业演讲、终极对话、告别）留在最后。
+ */
+window.KSS = window.KSS || { weeks: [], units: [] };
+
+KSS.unitOrder = [
+  'u01', 'u02', 'u03', 'u81', 'u04',   // 第1周：句尾①②③连续
+  'u05', 'u06', 'u07', 'u08', 'u82',   // 第2周
+  'u09', 'u10', 'u11', 'u12', 'u83',   // 第3周
+  'u13', 'u14', 'u15', 'u16', 'u84',   // 第4周
+  'u17', 'u18', 'u19', 'u20', 'u85',   // 第5周
+  'u21', 'u22', 'u23', 'u24', 'u86',   // 第6周
+  'u25', 'u26', 'u27', 'u28', 'u87',   // 第7周
+  'u29', 'u30', 'u31', 'u32', 'u88',   // 第8周
+  'u33', 'u34', 'u35', 'u36', 'u89',   // 第9周
+  'u37', 'u38', 'u39', 'u40', 'u90',   // 第10周
+  'u41', 'u42', 'u43', 'u44', 'u91',   // 第11周
+  'u45', 'u46', 'u47', 'u92', 'u48',   // 第12周：毕业演讲放最后
+  'u49', 'u50', 'u93', 'u51', 'u52',   // 第13周：告别放最后
+  'u53', 'u54', 'u55', 'u56', 'u94',   // 第14周
+  'u57', 'u58', 'u59', 'u60', 'u95',   // 第15周
+  'u61', 'u62', 'u63', 'u96', 'u64',   // 第16周：终极对话放最后
+  'u65', 'u66', 'u67', 'u68', 'u97',   // 第17周
+  'u69', 'u70', 'u71', 'u72', 'u98',   // 第18周
+  'u73', 'u74', 'u75', 'u76', 'u99',   // 第19周
+  'u77', 'u78', 'u79', 'u80', 'u100',  // 第20周：长对话①–⑤
+];
+
+</script>
+<script>
 /* 韩语口语特训 · 情景对话库（一）
  * 课程之外的日常生活全场景。每个情景都可以在 App 里角色扮演。
  * lines = [角色, 韩语, 中文]
@@ -10020,7 +10052,9 @@ KSS.buildGradePrompt = function () {
   const ARTIFACT = window.KSS_ENV === 'artifact';
   const CLAUDE = ARTIFACT && window.claude && typeof window.claude.use === 'function' ? window.claude : null;
   // 课程按周排序；每周 5 课（第 5 课是后来加的 u81-u100，按周插入）
-  const UNITS = K.units.slice().sort((a, b) => a.week - b.week || (+a.id.slice(1)) - (+b.id.slice(1)));
+  const ORDER = K.unitOrder || [];
+  const ordIdx = (u) => { const i = ORDER.indexOf(u.id); return i < 0 ? 1e6 + (+u.id.slice(1)) : i; };
+  const UNITS = K.units.slice().sort((a, b) => a.week - b.week || ordIdx(a) - ordIdx(b));
   const UNITS_OF_WEEK = (w) => UNITS.filter((u) => u.week === w);
   const lessonNo = (u) => pad(UNITS.indexOf(u) + 1);
   const WEEKS = K.weeks.slice().sort((a, b) => a.week - b.week);
@@ -10591,7 +10625,8 @@ KSS.buildGradePrompt = function () {
     return { n, w, d, week, type: 'test', label: '周测+复盘' };
   }
   const dayOfUnit = (u) => (u.week - 1) * 7 + UNITS_OF_WEEK(u.week).indexOf(u) + 1;
-  function currentDay() { for (let n = 1; n <= TOTAL_DAYS; n++) if (!S.daysDone[n]) return n; return TOTAL_DAYS; }
+  function isDayDone(n) { const di = dayInfo(n); return di.type === 'unit' ? !!(di.unit && S.unitsDone[di.unit.id]) : !!S.daysDone[n]; }
+  function currentDay() { for (let n = 1; n <= TOTAL_DAYS; n++) if (!isDayDone(n)) return n; return TOTAL_DAYS; }
   function completeDay(n) {
     if (!S.daysDone[n]) { S.daysDone[n] = today(); save(); toast(`第 ${n} 天完成！🔥`); }
   }
@@ -10651,14 +10686,14 @@ KSS.buildGradePrompt = function () {
   function viewHome() {
     const n = currentDay(), info = dayInfo(n);
     const due = dueIds().length;
-    const doneCount = Object.keys(S.daysDone).length;
+    let doneCount = 0; for (let k = 1; k <= TOTAL_DAYS; k++) if (isDayDone(k)) doneCount++;
     const todayTitle = info.type === 'unit' ? `${info.unit.title}` : info.type === 'review' ? '复习 + 现实任务' : `第 ${info.w} 周周测 + 本周复盘`;
     let grid = '';
     for (let w = 1; w <= WEEKS.length; w++) {
       grid += `<div class="wk"><div class="wk-l">W${w}</div>`;
       for (let d = 1; d <= 7; d++) {
         const dn = (w - 1) * 7 + d, di = dayInfo(dn);
-        const cls = S.daysDone[dn] ? 'done' : dn === n ? 'now' : '';
+        const cls = isDayDone(dn) ? 'done' : dn === n ? 'now' : '';
         const icon = di.type === 'unit' ? d : di.type === 'review' ? '复' : '测';
         grid += `<a class="dcell ${cls}" href="#day-${dn}" title="第${dn}天 · ${di.type === 'unit' ? di.unit.title : di.label}">${icon}</a>`;
       }
