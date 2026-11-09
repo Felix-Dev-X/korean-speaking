@@ -361,6 +361,9 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .comp-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
 .comp-opts .opt { min-height: 0; padding: 10px; font-size: .95rem; }
 .comp-line .who { color: var(--muted); font-weight: 600; margin-right: 4px; }
+.voice-info { margin-top: 10px; }
+.voice-info .vlist { padding-left: 1.2em; line-height: 1.5; }
+.voice-info code { font-size: .75rem; color: var(--muted); word-break: break-all; }
 
 </style>
 <header class="hdr">
@@ -11067,17 +11070,22 @@ KSS.buildGradePrompt = function () {
   /* ═════════════ 语音合成 TTS ═════════════ */
   let koVoices = [];
   let speaking = false;
+  let allVoiceCount = 0;
+  const isKoVoice = (v) => /^ko([-_]|$)/i.test(v.lang || '') || /ko[-_]KR/i.test(v.voiceURI || '');
   function loadVoices() {
     if (!('speechSynthesis' in window)) return;
-    const all = speechSynthesis.getVoices().filter((v) => (v.lang || '').toLowerCase().replace('_', '-').startsWith('ko'));
-    // iPhone 等系统常把同一个发音人列两遍：名字和音质都一样的只留一个
-    const seen = new Set();
-    koVoices = all.filter((v) => { const k = voiceLabel(v); if (seen.has(k)) return false; seen.add(k); return true; });
+    const all = speechSynthesis.getVoices();
+    allVoiceCount = all.length;
+    // 不再合并"看起来一样"的发音人，全部列出来（同名的加编号区分）
+    koVoices = all.filter(isKoVoice);
   }
   function voiceLabel(v) {
     const u = (v.voiceURI || '') + ' ' + v.name;
-    const q = /premium/i.test(u) ? '高级音质' : /enhanced/i.test(u) ? '增强音质' : '';
-    return v.name + (q && !/[（(]/.test(v.name) ? `（${q}）` : '') + (v.localService === false ? '（在线）' : '');
+    const q = /premium/i.test(u) ? '高级音质' : /enhanced/i.test(u) ? '增强音质' : /compact/i.test(u) ? '标准' : '';
+    let lab = v.name + (q && !/[（(]/.test(v.name) ? `（${q}）` : '') + (v.localService === false ? '（在线）' : '');
+    const same = koVoices.filter((x) => x.name === v.name);
+    if (same.length > 1) lab += ' ' + '①②③④⑤⑥⑦⑧⑨'[same.indexOf(v)] ;
+    return lab;
   }
   if ('speechSynthesis' in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
   function ttsText(t) {
@@ -12753,7 +12761,14 @@ KSS.buildGradePrompt = function () {
         <select class="voice" id="voice-sel">${koVoices.length ? koVoices.map((v) => `<option value="${esc(v.voiceURI)}" ${v.voiceURI === S.settings.voiceURI ? 'selected' : ''}>${esc(voiceLabel(v))}</option>`).join('') : '<option value="">（没有找到韩语语音：请在手机/电脑的系统设置里下载韩语语音包）</option>'}</select>
         <label class="lbl" for="rate-sel">语速：<span class="rv">${S.settings.rate}</span>×</label>
         <input type="range" class="rate" id="rate-sel" min="0.6" max="1.3" step="0.05" value="${S.settings.rate}">
-        <div class="check-row"><button class="btn test-voice">▶ 试听</button></div>
+        <div class="check-row"><button class="btn test-voice">▶ 试听</button><button class="btn ghost reload-voices">🔄 刷新语音列表</button></div>
+        <details class="voice-info small"><summary>手机里下载了语音，这里却没有？</summary>
+          <p class="muted">系统现在告诉网页的韩语语音有 <b class="vc">${koVoices.length}</b> 个（全部语言共 ${allVoiceCount} 个）：</p>
+          <ul class="vlist">${koVoices.map((v) => `<li><b>${esc(v.name)}</b> · ${esc(v.lang)}${v.localService === false ? ' · 在线' : ''}<br><code>${esc(v.voiceURI)}</code></li>`).join('') || '<li>（无）</li>'}</ul>
+          <p class="muted">• 下载新语音后，要<b>完全关掉</b>页面（Safari 里关掉这个标签页；Claude App 里从后台划掉 App）再打开，网页才会看到新语音。<br>
+          • 在 Claude App 里打开时，系统给网页的语音可能比 Safari 少。可以用 <b>Safari</b> 打开同一个链接对比一下。<br>
+          • Siri 的声音和「个人声音」苹果不开放给网页，这里一定选不到。</p>
+        </details>
         <label class="switch"><input type="checkbox" class="al" id="auto-listen" ${S.settings.autoListen ? 'checked' : ''}> ${hasSR ? '练习时自动开始语音识别（不用每次点 🎤）' : '练习时自动把光标放进输入框（手机上直接点键盘 🎤 就能说）'}</label>
         ${ARTIFACT
           ? '<p class="muted small">网页版用<b>手机键盘的语音输入</b>说韩语：先在系统设置里给键盘添加"韩语"，说话前把键盘切到韩语，再点 🎤。iPhone：设置 → 通用 → 键盘 → 添加新键盘 → 韩语，并打开"启用听写"。Android（Gboard）：设置 → 语言 → 添加韩语。</p>'
@@ -12772,6 +12787,11 @@ KSS.buildGradePrompt = function () {
     $('.voice', el).onchange = (e) => { S.settings.voiceURI = e.target.value; save(); };
     $('.rate', el).oninput = (e) => { S.settings.rate = +e.target.value; $('.rv', el).textContent = e.target.value; save(); };
     $('.test-voice', el).onclick = () => speak('안녕하세요. 오늘도 같이 열심히 말해 봐요!');
+    $('.reload-voices', el).onclick = () => {
+      // iOS 有时要先"说"一次才会把完整的语音列表交给网页
+      try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch (e) { /* ignore */ }
+      setTimeout(() => { loadVoices(); viewSettings(); toast('找到 ' + koVoices.length + ' 个韩语语音'); }, 600);
+    };
     $('.al', el).onchange = (e) => { S.settings.autoListen = e.target.checked; save(); };
     if (!ARTIFACT) {
       $('.save-key', el).onclick = () => { S.settings.apiKey = $('.key', el).value.trim(); save(); toast('已保存'); };

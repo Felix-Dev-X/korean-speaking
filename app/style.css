@@ -357,3 +357,6 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .comp-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
 .comp-opts .opt { min-height: 0; padding: 10px; font-size: .95rem; }
 .comp-line .who { color: var(--muted); font-weight: 600; margin-right: 4px; }
+.voice-info { margin-top: 10px; }
+.voice-info .vlist { padding-left: 1.2em; line-height: 1.5; }
+.voice-info code { font-size: .75rem; color: var(--muted); word-break: break-all; }
