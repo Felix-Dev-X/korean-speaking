@@ -207,16 +207,18 @@
     if (!('speechSynthesis' in window)) return;
     const all = speechSynthesis.getVoices();
     allVoiceCount = all.length;
-    // 不再合并"看起来一样"的发音人，全部列出来（同名的加编号区分）
-    koVoices = all.filter(isKoVoice);
+    // iPhone 会把同一个发音人报好几遍：名字、音质都一样的只显示一个
+    const seen = new Set();
+    koVoices = all.filter(isKoVoice).filter((v) => { const k = voiceKey(v); if (seen.has(k)) return false; seen.add(k); return true; });
+  }
+  function voiceKey(v) {
+    const u = (v.voiceURI || '') + ' ' + v.name;
+    return v.name + '|' + (/premium/i.test(u) ? 'p' : /enhanced/i.test(u) ? 'e' : '') + '|' + (v.localService === false ? 'n' : 'l');
   }
   function voiceLabel(v) {
     const u = (v.voiceURI || '') + ' ' + v.name;
-    const q = /premium/i.test(u) ? '高级音质' : /enhanced/i.test(u) ? '增强音质' : /compact/i.test(u) ? '标准' : '';
-    let lab = v.name + (q && !/[（(]/.test(v.name) ? `（${q}）` : '') + (v.localService === false ? '（在线）' : '');
-    const same = koVoices.filter((x) => x.name === v.name);
-    if (same.length > 1) lab += ' ' + '①②③④⑤⑥⑦⑧⑨'[same.indexOf(v)] ;
-    return lab;
+    const q = /premium/i.test(u) ? '高级音质' : /enhanced/i.test(u) ? '增强音质' : '';
+    return v.name + (q && !/[（(]/.test(v.name) ? `（${q}）` : '') + (v.localService === false ? '（在线）' : '');
   }
   if ('speechSynthesis' in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
   function ttsText(t) {
@@ -1896,7 +1898,8 @@
         <details class="voice-info small"><summary>手机里下载了语音，这里却没有？</summary>
           <p class="muted">系统现在告诉网页的韩语语音有 <b class="vc">${koVoices.length}</b> 个（全部语言共 ${allVoiceCount} 个）：</p>
           <ul class="vlist">${koVoices.map((v) => `<li><b>${esc(v.name)}</b> · ${esc(v.lang)}${v.localService === false ? ' · 在线' : ''}<br><code>${esc(v.voiceURI)}</code></li>`).join('') || '<li>（无）</li>'}</ul>
-          <p class="muted">• 下载新语音后，要<b>完全关掉</b>页面（Safari 里关掉这个标签页；Claude App 里从后台划掉 App）再打开，网页才会看到新语音。<br>
+          <p class="muted">• 如果这里只有 Yuna：iPhone 出于隐私保护，一般只把系统自带的语音交给网页，你自己下载的其他语音网页用不了，这不是下载失败。<br>
+          • 下载新语音后，要<b>完全关掉</b>页面（Safari 里关掉这个标签页；Claude App 里从后台划掉 App）再打开，网页才会看到新语音。<br>
           • 在 Claude App 里打开时，系统给网页的语音可能比 Safari 少。可以用 <b>Safari</b> 打开同一个链接对比一下。<br>
           • Siri 的声音和「个人声音」苹果不开放给网页，这里一定选不到。</p>
         </details>
