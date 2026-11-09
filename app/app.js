@@ -253,6 +253,8 @@
   /* ═════════════ 语音识别 ASR ═════════════ */
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const hasSR = !!SR && !ARTIFACT;
+  // iPhone/iPad 上 Safari 自带的网页语音识别经常听完什么都不返回；键盘上的 🎤（系统听写）更可靠
+  const IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const hasMic = !ARTIFACT && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   let listening = false, currentRec = null;
   function listenOnce(onInterim, maxMs) {
@@ -287,7 +289,7 @@
   function stopListen() { if (currentRec) { try { currentRec.abort(); } catch (e) { /* ignore */ } } listening = false; }
   const srErrMsg = (err) => ({
     'not-allowed': '麦克风权限被拒绝。请在浏览器地址栏允许麦克风，并通过 http://localhost 或 https 打开本页面。',
-    'service-not-allowed': '浏览器不允许语音识别服务。',
+    'service-not-allowed': IOS ? '网页语音识别不可用。请改用下面的输入框：点输入框 → 键盘上的 🎤 → 说韩语 → 点「打分」。' : '浏览器不允许语音识别服务。',
     'no-speech': '没听到声音，再大声一点试试。',
     'audio-capture': '找不到麦克风设备。',
     network: '语音识别需要联网（Chrome 的识别在云端完成）。',
@@ -346,8 +348,8 @@
         <span class="live"></span>
       </div>
       <div class="result"></div>
-      <details class="typed" ${hasSR ? '' : 'open'}><summary>${hasSR ? '打字检查' : '用键盘语音输入说出来（点键盘上的 🎤）'}</summary>
-        <div class="check-row"><input type="text" lang="ko" autocomplete="off" placeholder="${hasSR ? '输入你说的韩语' : '点这里 → 键盘 🎤 → 用韩语说'}"><button class="btn small">打分</button></div>
+      <details class="typed" ${hasSR && !IOS ? '' : 'open'}><summary>${hasSR && !IOS ? '打字检查' : '用键盘语音输入说出来（点键盘上的 🎤）'}</summary>
+        <div class="check-row"><input type="text" lang="ko" autocomplete="off" placeholder="${hasSR && !IOS ? '输入你说的韩语' : '点这里 → 键盘 🎤 → 用韩语说'}"><button class="btn small">打分</button></div>
       </details>
     </div>`);
     const live = $('.live', el), result = $('.result', el);
@@ -370,7 +372,7 @@
       mic.classList.remove('rec'); mic.textContent = '🎤 再说一次';
       if (r.ok) { live.textContent = ''; show(r.alts); }
       else if (r.err && r.err !== 'aborted') { live.textContent = srErrMsg(r.err) || ('识别失败：' + r.err); }
-      else if (!r.ok) { live.textContent = '没听清，再试一次'; }
+      else if (!r.ok) { live.textContent = IOS ? '网页识别没收到内容。请用下面的输入框：点输入框 → 键盘上的 🎤 → 说韩语 → 点「打分」。' : '没听清，再试一次'; }
     };
     if (hasSR) $('.mic', el).onclick = go;
     $('.self', el).onclick = () => { logRep(); opts.onSelf && opts.onSelf(); };
@@ -378,7 +380,7 @@
     $('.typed button', el).onclick = () => { if (input.value.trim()) show([input.value]); };
     input.onkeydown = (e) => { if (e.key === 'Enter' && input.value.trim()) show([input.value]); };
     el.start = () => {
-      if (hasSR && S.settings.autoListen) go();
+      if (hasSR && !IOS && S.settings.autoListen) go();
       else if (!hasSR && S.settings.autoListen && window.matchMedia('(pointer: coarse)').matches) { try { input.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }
     };
     return el;
