@@ -341,24 +341,35 @@
   /* 通用"开口检查"组件：说出 target，识别并打分 */
   function speakCheck(target, opts) {
     opts = opts || {};
+    // KB：用手机键盘的 🎤（系统听写）说。iPhone、网页版、不支持网页识别的浏览器都用这种方式
+    const KB = !hasSR || IOS;
     const el = h(`<div class="check">
       <div class="check-row">
-        ${hasSR ? '<button class="btn mic">🎤 说出来</button>' : ''}
-        <button class="btn ghost self">${hasSR ? '不用识别，看答案' : '我说完了，看答案'}</button>
+        <button class="btn mic">🎤 说出来</button>
+        <button class="btn ghost self">我说完了，看答案</button>
         <span class="live"></span>
       </div>
       <div class="result"></div>
-      <details class="typed" ${hasSR && !IOS ? '' : 'open'}><summary>${hasSR && !IOS ? '打字检查' : '用键盘语音输入说出来（点键盘上的 🎤）'}</summary>
-        <div class="check-row"><input type="text" lang="ko" autocomplete="off" placeholder="${hasSR && !IOS ? '输入你说的韩语' : '点这里 → 键盘 🎤 → 用韩语说'}"><button class="btn small">打分</button></div>
+      <details class="typed" ${KB ? 'open' : ''}><summary>${KB ? '键盘语音输入' : '打字检查'}</summary>
+        <div class="check-row"><input type="text" lang="ko" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" placeholder="${KB ? '点「🎤 说出来」→ 键盘上的 🎤 → 说韩语' : '输入你说的韩语'}"><button class="btn small">打分</button></div>
+        ${KB && !S.settings.kbTipDone ? '<div class="kb-hint small muted">第一次用：键盘出来后点 🌐 切到<b>韩语键盘</b>再按 🎤（之后一般会记住，不用每次切）。说完停一下，自动打分。</div>' : ''}
+        <div class="kb-warn"></div>
       </details>
     </div>`);
-    const live = $('.live', el), result = $('.result', el);
-    const show = (alts) => {
+    const live = $('.live', el), result = $('.result', el), input = $('.typed input', el), warn = $('.kb-warn', el);
+    let committed = '';
+    // auto=true：说话中途的自动打分。分数低时只显示，不算成绩（避免没说完就被判错、跳到下一句）
+    const show = (alts, auto) => {
       const best = bestScore(target, alts);
+      if (auto && best.score < 80) {
+        result.innerHTML = `<div class="heard">识别到：${esc(best.said)}</div><div class="muted small">还没说完就接着说；说完了点「打分」或键盘上的「完成」。</div>`;
+        return best.score;
+      }
       const [cls, word] = verdict(best.score);
       result.innerHTML = `<div class="score ${cls}"><b>${best.score}</b> 分 · ${word}</div>
         <div class="heard">识别到：${esc(best.said)}</div>
         <div class="diffline">${diffHtml(best.target, best.said)}</div>`;
+      committed = alts[0];
       logRep();
       opts.onScore && opts.onScore(best.score, best.said);
       return best.score;
@@ -372,16 +383,37 @@
       mic.classList.remove('rec'); mic.textContent = '🎤 再说一次';
       if (r.ok) { live.textContent = ''; show(r.alts); }
       else if (r.err && r.err !== 'aborted') { live.textContent = srErrMsg(r.err) || ('识别失败：' + r.err); }
-      else if (!r.ok) { live.textContent = IOS ? '网页识别没收到内容。请用下面的输入框：点输入框 → 键盘上的 🎤 → 说韩语 → 点「打分」。' : '没听清，再试一次'; }
+      else if (!r.ok) { live.textContent = '没听清，再试一次'; }
     };
-    if (hasSR) $('.mic', el).onclick = go;
+    // 键盘方式：点按钮 → 清空并聚焦输入框（键盘弹出）→ 用户点键盘 🎤 说 → 文字停止变化后自动打分
+    const kbGo = () => {
+      input.value = ''; committed = ''; warn.innerHTML = '';
+      try { input.focus(); } catch (e) { /* ignore */ }
+      live.textContent = '点键盘上的 🎤 说韩语';
+    };
+    $('.mic', el).onclick = KB ? kbGo : go;
     $('.self', el).onclick = () => { logRep(); opts.onSelf && opts.onSelf(); };
-    const input = $('.typed input', el);
-    $('.typed button', el).onclick = () => { if (input.value.trim()) show([input.value]); };
-    input.onkeydown = (e) => { if (e.key === 'Enter' && input.value.trim()) show([input.value]); };
+    const commit = (auto) => {
+      clearTimeout(autoT);
+      const v = input.value.trim();
+      if (!v || v === committed) return;
+      if (/[一-鿿]/.test(v) && !/[가-힣]/.test(v)) {
+        warn.innerHTML = '<div class="warn-line">出来的是中文：点键盘上的 🌐 切到<b>韩语键盘</b>，再按 🎤 说。</div>';
+        return;
+      }
+      warn.innerHTML = ''; live.textContent = '';
+      if (/[가-힣]/.test(v) && !S.settings.kbTipDone) { S.settings.kbTipDone = true; save(); }
+      show([v], auto);
+    };
+    let autoT = null;
+    $('.typed button', el).onclick = () => commit(false);
+    input.onkeydown = (e) => { if (e.key === 'Enter') { commit(false); try { input.blur(); } catch (er) { /* ignore */ } } };
+    if (KB) {
+      input.oninput = () => { clearTimeout(autoT); autoT = setTimeout(() => commit(true), 1500); };
+      input.onblur = () => { if (input.value.trim() && input.value.trim() !== committed) commit(false); };
+    }
     el.start = () => {
-      if (hasSR && !IOS && S.settings.autoListen) go();
-      else if (!hasSR && S.settings.autoListen && window.matchMedia('(pointer: coarse)').matches) { try { input.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }
+      if (!KB && S.settings.autoListen) go();
     };
     return el;
   }
