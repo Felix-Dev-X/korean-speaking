@@ -357,3 +357,9 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .comp-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
 .comp-opts .opt { min-height: 0; padding: 10px; font-size: .95rem; }
 .comp-line .who { color: var(--muted); font-weight: 600; margin-right: 4px; }
+/* 键盘听写提示 */
+.kb-hint { margin-top: 6px; }
+.warn-line { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: var(--ok-soft); color: var(--ink); font-size: .9rem; border: 1px solid var(--ok); }
+.mic-test .mt-steps { padding-left: 1.2em; line-height: 1.6; }
+.mic-test .mt-in { width: 100%; margin-top: 6px; }
+.mic-test .mt-out { margin-top: 8px; }

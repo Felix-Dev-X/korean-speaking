@@ -361,6 +361,12 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .comp-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
 .comp-opts .opt { min-height: 0; padding: 10px; font-size: .95rem; }
 .comp-line .who { color: var(--muted); font-weight: 600; margin-right: 4px; }
+/* 键盘听写提示 */
+.kb-hint { margin-top: 6px; }
+.warn-line { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: var(--ok-soft); color: var(--ink); font-size: .9rem; border: 1px solid var(--ok); }
+.mic-test .mt-steps { padding-left: 1.2em; line-height: 1.6; }
+.mic-test .mt-in { width: 100%; margin-top: 6px; }
+.mic-test .mt-out { margin-top: 8px; }
 
 </style>
 <header class="hdr">
@@ -11112,25 +11118,32 @@ KSS.buildGradePrompt = function () {
       stopSpeak();
       let rec;
       try { rec = new SR(); } catch (e) { resolve({ ok: false, err: 'init', text: '', alts: [] }); return; }
-      rec.lang = 'ko-KR'; rec.interimResults = true; rec.maxAlternatives = 3; rec.continuous = false;
-      let finalText = '', alts = [], err = null, interimText = '';
+      // 连续识别：中间停顿不会结束；说完后 2 秒没有新内容才自动停止（也可以手动点停止）
+      rec.lang = 'ko-KR'; rec.interimResults = true; rec.maxAlternatives = 3; rec.continuous = true;
+      let finalText = '', alts = [], err = null, interimText = '', quiet = null;
       rec.onresult = (e) => {
-        let interim = '';
-        for (let i = e.resultIndex; i < e.results.length; i++) {
+        // 每次都从头重建，避免个别浏览器（iOS Safari）重复返回同一段结果
+        let fin = '', interim = '', finAlts = [];
+        for (let i = 0; i < e.results.length; i++) {
           const r = e.results[i];
-          if (r.isFinal) { finalText += r[0].transcript; alts = alts.concat(Array.from(r).map((a) => a.transcript)); }
+          if (r.isFinal) { fin += r[0].transcript + ' '; finAlts.push(Array.from(r).map((a) => a.transcript)); }
           else interim += r[0].transcript;
         }
-        interimText = interim;
-        onInterim && onInterim(finalText + interim);
+        finalText = fin.trim(); interimText = interim;
+        // 候选：整句第一候选 + 每段换成它的其他候选
+        alts = finalText ? [finalText] : [];
+        finAlts.forEach((cands, k) => cands.slice(1).forEach((c) => alts.push(finAlts.map((x, j) => (j === k ? c : x[0])).join(' '))));
+        onInterim && onInterim((finalText + ' ' + interim).trim());
+        clearTimeout(quiet);
+        quiet = setTimeout(() => { try { rec.stop(); } catch (e2) { /* ignore */ } }, 2000);
       };
       rec.onerror = (e) => { err = e.error; };
       rec.onend = () => {
-        listening = false; currentRec = null; clearTimeout(t);
+        listening = false; currentRec = null; clearTimeout(t); clearTimeout(quiet);
         const text = finalText || interimText;
         resolve({ ok: !!text, text, alts: alts.length ? alts : (text ? [text] : []), err });
       };
-      const t = setTimeout(() => { try { rec.stop(); } catch (e) { /* ignore */ } }, maxMs || 15000);
+      const t = setTimeout(() => { try { rec.stop(); } catch (e) { /* ignore */ } }, maxMs || 20000);
       listening = true; currentRec = rec;
       try { rec.start(); } catch (e) { listening = false; resolve({ ok: false, err: 'start', text: '', alts: [] }); }
     });
@@ -11158,10 +11171,54 @@ KSS.buildGradePrompt = function () {
     return prev[n];
   }
   const targetsOf = (target) => String(target).split(/\s\/\s/).map((s) => s.trim()).filter(Boolean);
-  function scoreOne(target, said) {
-    const a = norm(target), b = norm(said);
+  function scoreRaw(a, b) {
     if (!a.length || !b.length) return 0;
     return Math.max(0, Math.round((1 - lev(a, b) / Math.max(a.length, b.length)) * 100));
+  }
+  /* 识别结果（尤其 iPhone 听写）常把数字写成阿拉伯数字：3시、5,000원、010-1234…
+     打分前把每段数字展开成几种读法（汉字词 / 固有词量词形 / 固有词 / 逐位读），取最接近目标的组合。 */
+  function numReadings(str) {
+    const n = +str, out = new Set();
+    if (str.length >= 3) out.add(Array.from(str).map((d) => (d === '0' ? '공' : sino(+d))).join(''));
+    if (/^0\d/.test(str)) out.add(Array.from(str).map((d) => (d === '0' ? '공' : sino(+d))).join(''));
+    out.add(n === 0 ? '영' : sino(n));
+    if (n === 0) out.add('공');
+    if (n >= 1 && n <= 99) { out.add(native(n, true)); out.add(native(n)); }
+    if (n === 6) out.add('유'); if (n === 10) out.add('시');
+    return Array.from(out).map((x) => x.replace(/\s/g, ''));
+  }
+  function numVariants(s) {
+    const src = String(s).replace(/(\d),(?=\d{3})/g, '$1');
+    const parts = src.split(/(\d+)/);
+    const runs = parts.filter((_, i) => i % 2 === 1);
+    if (!runs.length) return [src];
+    let vars = [''];
+    parts.forEach((p, i) => {
+      const opts = i % 2 === 1 && runs.length <= 4 ? numReadings(p) : i % 2 === 1 ? [numReadings(p)[0]] : [p];
+      const next = [];
+      vars.forEach((v) => opts.forEach((o) => next.push(v + o)));
+      vars = next.slice(0, 200);
+    });
+    return vars;
+  }
+  function scoreOne(target, said) {
+    const a = norm(target);
+    let best = scoreRaw(a, norm(said));
+    if (/\d/.test(said) || /\d/.test(target)) {
+      const ta = numVariants(target).map(norm), sa = numVariants(said).map(norm);
+      for (const x of ta) for (const y of sa) { const sc = scoreRaw(x, y); if (sc > best) best = sc; }
+    }
+    return best;
+  }
+  const HANZI = /[\u4e00-\u9fff]/;
+  /* 键盘听写语言不对时（说韩语却识别成中文/英文），给出明确提示 */
+  function kbLangProblem(text) {
+    const t = String(text || '');
+    if (!t.trim()) return '';
+    const ko = (t.match(/[가-힣]/g) || []).length, zh = (t.match(/[\u4e00-\u9fff]/g) || []).length, en = (t.match(/[a-zA-Z]/g) || []).length;
+    if (zh && zh >= ko) return '识别成了<b>中文</b>：说明键盘不是韩语。点键盘左下角 🌐 切到<b>한국어</b>键盘，再按 🎤 说。';
+    if (!ko && en > 2) return '识别成了<b>英文</b>：请把键盘切到<b>한국어</b>（点 🌐），再按 🎤 说。';
+    return '';
   }
   function bestScore(target, saidAlts) {
     let best = { score: 0, target: targetsOf(target)[0], said: saidAlts[0] || '' };
@@ -11198,18 +11255,20 @@ KSS.buildGradePrompt = function () {
       </div>
       <div class="result"></div>
       <details class="typed" ${hasSR ? '' : 'open'}><summary>${hasSR ? '打字检查' : '用键盘语音输入说出来（点键盘上的 🎤）'}</summary>
-        <div class="check-row"><input type="text" lang="ko" autocomplete="off" placeholder="${hasSR ? '输入你说的韩语' : '点这里 → 键盘 🎤 → 用韩语说'}"><button class="btn small">打分</button></div>
+        <div class="check-row"><input type="text" lang="ko" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" placeholder="${hasSR ? '输入你说的韩语' : '点这里 → 键盘 🎤 → 用韩语说'}"><button class="btn small">打分</button></div>
+        ${hasSR ? '' : '<div class="kb-hint small muted">先切到<b>韩语键盘</b>（点 🌐）再按 🎤 · 说完停 2 秒自动打分 · <a href="#prefs-mic">识别不准？</a></div>'}
+        <div class="kb-warn"></div>
       </details>
     </div>`);
     const live = $('.live', el), result = $('.result', el);
-    const show = (alts) => {
+    const show = (alts, auto) => {
       const best = bestScore(target, alts);
       const [cls, word] = verdict(best.score);
       result.innerHTML = `<div class="score ${cls}"><b>${best.score}</b> 分 · ${word}</div>
         <div class="heard">识别到：${esc(best.said)}</div>
         <div class="diffline">${diffHtml(best.target, best.said)}</div>`;
-      logRep();
-      opts.onScore && opts.onScore(best.score, best.said);
+      if (!auto || best.score >= 75) { logRep(); opts.onScore && opts.onScore(best.score, best.said); }
+      else result.insertAdjacentHTML('beforeend', '<div class="muted small">还没说完？接着说；说完了就点「打分」。</div>');
       return best.score;
     };
     const go = async () => {
@@ -11225,9 +11284,25 @@ KSS.buildGradePrompt = function () {
     };
     if (hasSR) $('.mic', el).onclick = go;
     $('.self', el).onclick = () => { logRep(); opts.onSelf && opts.onSelf(); };
-    const input = $('.typed input', el);
-    $('.typed button', el).onclick = () => { if (input.value.trim()) show([input.value]); };
-    input.onkeydown = (e) => { if (e.key === 'Enter' && input.value.trim()) show([input.value]); };
+    const input = $('.typed input', el), warn = $('.kb-warn', el);
+    let autoT = null, lastAuto = '';
+    const commit = () => {
+      clearTimeout(autoT);
+      const v = input.value.trim(); if (!v) return;
+      const p = kbLangProblem(v); warn.innerHTML = p ? `<div class="warn-line">${p}</div>` : '';
+      if (!p) show([v]);
+    };
+    $('.typed button', el).onclick = commit;
+    input.onkeydown = (e) => { if (e.key === 'Enter') commit(); };
+    // 键盘听写：文字停止变化 2 秒后自动打分（分数低时不算数，等你说完或点「打分」）
+    input.oninput = () => {
+      clearTimeout(autoT);
+      const v = input.value.trim();
+      const p = kbLangProblem(v);
+      warn.innerHTML = p ? `<div class="warn-line">${p}</div>` : '';
+      if (!v || p) return;
+      autoT = setTimeout(() => { if (input.value.trim() === v && v !== lastAuto) { lastAuto = v; show([v], true); } }, 2000);
+    };
     el.start = () => {
       if (hasSR && S.settings.autoListen) go();
       else if (!hasSR && S.settings.autoListen && window.matchMedia('(pointer: coarse)').matches) { try { input.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }
@@ -11260,6 +11335,8 @@ KSS.buildGradePrompt = function () {
     </div>`);
     const btn = $('.rec-btn', el), timerEl = $('.timer', el), fill = $('.fill', el), out = $('.rec-out', el);
     const ta = $('.transcript', el), audio = $('audio', el) || {}, gradeBox = $('.grade', el);
+    ta.insertAdjacentHTML('afterend', '<div class="kb-warn"></div>');
+    ta.addEventListener('input', () => { const p = kbLangProblem(ta.value); $('.kb-warn', el).innerHTML = p ? `<div class="warn-line">${p}</div>` : ''; });
     let mr = null, chunks = [], stream = null, t0 = 0, tick = null, srRec = null, running = false, finalText = '';
 
     async function start() {
@@ -12736,7 +12813,8 @@ KSS.buildGradePrompt = function () {
   /* ═════════════ 设置 ═════════════ */
   let DOWNLOADS = null;
   if (CLAUDE) CLAUDE.use('downloads').then((d) => { DOWNLOADS = d || null; }).catch(() => {});
-  function viewSettings() {
+  function viewSettings(arg) {
+    const focusMic = arg === 'mic';
     loadVoices();
     const canExport = !ARTIFACT || !!DOWNLOADS;
     const el = setView(`<h1 class="page-title">设置</h1>
@@ -12751,6 +12829,19 @@ KSS.buildGradePrompt = function () {
           ? '<p class="muted small">网页版用<b>手机键盘的语音输入</b>说韩语：先在系统设置里给键盘添加"韩语"，说话前把键盘切到韩语，再点 🎤。iPhone：设置 → 通用 → 键盘 → 添加新键盘 → 韩语，并打开"启用听写"。Android（Gboard）：设置 → 语言 → 添加韩语。</p>'
           : `<p class="muted small">语音识别：${hasSR ? '✅ 当前浏览器支持' : '❌ 当前浏览器不支持（推荐 Chrome / Edge / Safari）'}。需要通过 <code>http://localhost</code> 或 <code>https</code> 打开页面，并允许麦克风。</p>`}
       </section>
+      <section class="card mic-test" id="mic-test"><h2>🎤 识别测试</h2>
+        ${hasSR ? '<p class="muted small">点「开始」，用韩语说：<b lang="ko">안녕하세요. 오늘 세 시에 만나요.</b></p><div class="check-row"><button class="btn primary mt-go">开始</button></div>'
+          : `<p class="muted small">你现在用的是<b>手机键盘的语音输入</b>。照下面做，然后在框里用韩语说：<b lang="ko">안녕하세요. 오늘 세 시에 만나요.</b></p>
+        <ol class="small mt-steps">
+          <li><b>iPhone</b>：设置 → 通用 → 键盘 → 键盘 → 添加新键盘 → <b>韩语</b>（选「标准」）；同一页打开<b>「启用听写」</b>。</li>
+          <li>回到这里，点下面的输入框，按键盘左下角 <b>🌐</b> 切到 <b>한국어</b> 键盘（空格键上会显示「한국어」）。</li>
+          <li>再按键盘右下角（或空格键旁）的 <b>🎤</b>，用韩语说；说完点一下键盘外的地方结束。</li>
+          <li>如果切到韩语键盘后没有 🎤：设置 → 通用 → 键盘 → 听写语言，勾上<b>韩语</b>。</li>
+          <li><b>安卓（Gboard）</b>：键盘设置 → 语言 → 添加韩语；说话前长按空格或点 🌐 切到韩语，再点 🎤。</li>
+        </ol>
+        <input type="text" class="mt-in" lang="ko" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="点这里 → 切到韩语键盘 → 🎤">`}
+        <div class="mt-out"></div>
+      </section>
       ${ARTIFACT ? '' : `<section class="card"><h2>AI 陪练（Anthropic API）</h2>
         <label class="lbl" for="api-key">API Key（只保存在本机浏览器）</label>
         <div class="check-row"><input type="password" class="key" id="api-key" value="${esc(S.settings.apiKey)}" placeholder="sk-ant-..." autocomplete="off"><button class="btn save-key">保存</button><button class="btn ghost clear-key">清除</button></div>
@@ -12764,6 +12855,27 @@ KSS.buildGradePrompt = function () {
     $('.voice', el).onchange = (e) => { S.settings.voiceURI = e.target.value; save(); };
     $('.rate', el).oninput = (e) => { S.settings.rate = +e.target.value; $('.rv', el).textContent = e.target.value; save(); };
     $('.test-voice', el).onclick = () => speak('안녕하세요. 오늘도 같이 열심히 말해 봐요!');
+    {
+      const MT = '안녕하세요. 오늘 세 시에 만나요.', out = $('.mt-out', el);
+      const report = (text) => {
+        const p = kbLangProblem(text);
+        if (!text.trim()) { out.innerHTML = ''; return; }
+        const sc = bestScore(MT, [text]).score;
+        out.innerHTML = `<div class="heard">识别到：<b lang="ko">${esc(text)}</b></div>` + (p ? `<div class="warn-line">${p}</div>`
+          : sc >= 80 ? `<div class="score great"><b>${sc}</b> 分 · ✅ 识别正常，可以开始练了</div>`
+          : `<div class="score ok"><b>${sc}</b> 分 · 识别到了韩语，但和例句差得有点多。离手机近一点、慢一点、一句话说完整再试一次。</div>`);
+      };
+      const mi = $('.mt-in', el);
+      if (mi) mi.oninput = () => report(mi.value);
+      const mg = $('.mt-go', el);
+      if (mg) mg.onclick = async () => {
+        mg.textContent = '● 正在听…'; out.innerHTML = '';
+        const r = await listenOnce((t) => { out.innerHTML = `<div class="heard">${esc(t)}</div>`; });
+        mg.textContent = '再试一次';
+        if (r.ok) report(r.text); else out.innerHTML = `<div class="warn-line">${esc(srErrMsg(r.err) || '没有识别到声音。请确认已允许麦克风，环境安静一点再试。')}</div>`;
+      };
+      if (focusMic) setTimeout(() => { const s = $('#mic-test'); if (s) s.scrollIntoView({ block: 'start' }); }, 50);
+    }
     $('.al', el).onchange = (e) => { S.settings.autoListen = e.target.checked; save(); };
     if (!ARTIFACT) {
       $('.save-key', el).onclick = () => { S.settings.apiKey = $('.key', el).value.trim(); save(); toast('已保存'); };
