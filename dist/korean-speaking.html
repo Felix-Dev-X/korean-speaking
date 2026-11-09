@@ -106,11 +106,11 @@ textarea { resize: vertical; }
 input[type=range] { width: 100%; accent-color: var(--accent); }
 
 /* ── home ── */
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+.stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 14px; }
 .stat { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 12px; text-align: center; }
 .stat b { display: block; font-size: 1.5rem; }
 .stat span { font-size: .78rem; color: var(--muted); }
-@media (max-width: 560px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .stats { grid-template-columns: repeat(3, 1fr); } .stat { padding: 10px 6px; } }
 .grid { display: grid; gap: 6px; }
 .wk { display: grid; grid-template-columns: 34px repeat(7, 1fr); gap: 6px; align-items: center; }
 .wk-l { font-size: .75rem; color: var(--muted); font-weight: 700; }
@@ -367,6 +367,11 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 /* 键盘语音输入 */
 .kb-hint { margin-top: 6px; }
 .warn-line { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: var(--ok-soft); color: var(--ink); font-size: .9rem; border: 1px solid var(--ok); }
+a.stat { color: inherit; text-decoration: none; }
+a.stat span { color: var(--accent); }
+.review-tabs { margin-bottom: 10px; }
+.card-q { width: 100%; margin-bottom: 12px; }
+.pb-main small.muted { display: block; font-size: .75rem; margin-top: 2px; }
 
 </style>
 <header class="hdr">
@@ -11609,7 +11614,8 @@ KSS.buildGradePrompt = function () {
       <section class="stats">
         <div class="stat"><b>${streak()}</b><span>连续天数</span></div>
         <div class="stat"><b>${doneCount}</b><span>已完成天数</span></div>
-        <div class="stat"><b>${Object.keys(S.srs).length}</b><span>复习库句子</span></div>
+        <a class="stat" href="#review-all"><b>${Object.keys(S.srs).length}</b><span>复习库句子 ›</span></a>
+        <a class="stat" href="#review-fav"><b>${Object.keys(S.custom || {}).length}</b><span>⭐ 收藏 ›</span></a>
         <div class="stat"><b>${Math.round(Object.values(S.log).reduce((a, l) => a + (l.sec || 0), 0) / 60)}</b><span>累计分钟</span></div>
       </section>
       <section class="card">
@@ -11956,13 +11962,24 @@ KSS.buildGradePrompt = function () {
   }
 
   /* ═════════════ 复习（SRS） ═════════════ */
+  /* 复习页顶部的切换：到期复习 / 我的收藏 / 全部复习卡 / 自由加练 */
+  const favIds = () => Object.keys(S.custom || {}).filter((id) => S.custom[id]).reverse();
+  function reviewTabs(cur) {
+    const t = [['', `到期复习（${dueIds().length}）`], ['fav', `⭐ 我的收藏（${favIds().length}）`], ['all', `全部复习卡（${Object.keys(S.srs).filter((id) => cardById(id)).length}）`], ['free', '自由加练']];
+    return `<div class="chips filter review-tabs">${t.map(([k, lab]) => `<a class="chip ${cur === k ? 'on' : ''}" href="#review${k ? '-' + k : ''}">${lab}</a>`).join('')}</div>`;
+  }
+  const fmtDue = (d) => { if (!d) return ''; const t = today(); if (d <= t) return '今天'; if (d === addDays(t, 1)) return '明天'; return d.slice(5).replace('-', '月') + '日'; };
   function viewReview(mode) {
+    if (mode === 'fav') return viewFavs();
+    if (mode === 'all') return viewAllCards();
     let queue = mode === 'free'
       ? shuffle(Object.keys(S.srs).length ? Object.keys(S.srs) : UNITS.slice(0, 2).flatMap((u) => cardsOfUnit(u).map((c) => c.id))).slice(0, 15)
+      : mode === 'favgo' ? shuffle(favIds())
       : shuffle(dueIds());
     const total = Object.keys(S.srs).length;
-    const el = setView(`<h1 class="page-title">复习 <small>${mode === 'free' ? '自由加练' : '到期卡片'}</small></h1>
-      <div class="tip card">看中文 → <b>出声</b>说韩语 → 看答案 → 诚实评价。"忘了"的卡片今天会再出现。复习库共 ${total} 句（完成一课自动加入）。</div>
+    const el = setView(`<h1 class="page-title">复习 <small>${mode === 'free' ? '自由加练' : mode === 'favgo' ? '练收藏的句子' : '到期卡片'}</small></h1>
+      ${reviewTabs(mode === 'favgo' ? 'fav' : mode || '')}
+      <div class="tip card">看中文 → <b>出声</b>说韩语 → 看答案 → 诚实评价。"忘了"的卡片今天会再出现。复习库共 ${total} 句（完成一课自动加入，点 ☆ 收藏的句子也会加入）。</div>
       <div class="review-box card"></div>`);
     const box = $('.review-box', el);
     let done = 0;
@@ -11970,7 +11987,7 @@ KSS.buildGradePrompt = function () {
       if (!queue.length) {
         box.innerHTML = `<h3>${done ? `🎉 今天复习了 ${done} 张！` : '今天没有到期的卡片 🎉'}</h3>
           <p class="muted">${total ? '明天再来。想多练的话：' : '先去完成第一课，句子会自动加入复习库。也可以直接加练：'}</p>
-          <a class="btn" href="#review-free">自由加练 15 张</a> <a class="btn ghost" href="#home">回首页</a>`;
+          <a class="btn" href="#review-free">自由加练 15 张</a> ${favIds().length ? '<a class="btn" href="#review-favgo">练收藏的句子</a> ' : ''}<a class="btn ghost" href="#home">回首页</a>`;
         return;
       }
       const id = queue[0], c = cardById(id);
@@ -12005,6 +12022,64 @@ KSS.buildGradePrompt = function () {
       chk.start();
     }
     render();
+  }
+
+  /* 一行句子：韩语 + 中文 + 来源/下次复习 + ▶ 🎤 ⭐ */
+  function cardRow(c, extra) {
+    const row = h(`<div class="pb-row"><div class="pb-main"><span class="ko" lang="ko">${esc(c.ko)}</span><span class="zh">${esc(c.zh)}</span><small class="muted">${esc(extra || '')}</small></div><div class="pb-acts"></div></div>`);
+    const acts = $('.pb-acts', row);
+    acts.appendChild(speakBtn(c.ko, '▶'));
+    const mic = h('<button class="btn icon" title="开口打分">🎤</button>');
+    mic.onclick = () => { let chk = $('.check', row); if (!chk) { chk = speakCheck(c.ko); row.appendChild(chk); } chk.start(); };
+    acts.appendChild(mic);
+    return row;
+  }
+  function viewFavs() {
+    const ids = favIds();
+    const el = setView(`<h1 class="page-title">复习 <small>我的收藏</small></h1>
+      ${reviewTabs('fav')}
+      <div class="tip card">在句库、情景、短文、百问、搜索结果等地方点 ☆ 收藏的句子都在这里，也会自动进入复习库。点 ⭐ 可以取消收藏。</div>
+      ${ids.length ? `<div class="check-row"><a class="btn primary" href="#review-favgo">▶ 只练收藏的句子（${ids.length} 句）</a></div>` : '<div class="card muted">还没有收藏。练习时看到想记住的句子，点旁边的 ☆ 就会出现在这里。</div>'}
+      <div class="card fav-list"></div>`);
+    const list = $('.fav-list', el);
+    if (!ids.length) { list.remove(); return; }
+    ids.forEach((id) => {
+      const f = S.custom[id], c = { ko: f.ko, zh: f.zh };
+      const row = cardRow(c, (f.src ? f.src + ' · ' : '') + '下次复习：' + fmtDue((S.srs[id] || {}).due));
+      const star = h('<button class="btn icon star" title="取消收藏">⭐</button>');
+      star.onclick = () => { toggleFav(f.ko, f.zh, f.src); row.remove(); toast('已取消收藏'); if (!$('.pb-row', list)) viewFavs(); };
+      $('.pb-acts', row).appendChild(star);
+      list.appendChild(row);
+    });
+  }
+  function viewAllCards() {
+    const all = Object.keys(S.srs).map((id) => ({ id, c: cardById(id), s: S.srs[id] })).filter((x) => x.c).sort((a, b) => (a.s.due < b.s.due ? -1 : a.s.due > b.s.due ? 1 : 0));
+    const t = today(), tm = addDays(t, 1);
+    const groups = [['今天要复习', all.filter((x) => x.s.due <= t)], ['明天', all.filter((x) => x.s.due === tm)], ['以后', all.filter((x) => x.s.due > tm)]];
+    const el = setView(`<h1 class="page-title">复习 <small>全部复习卡</small></h1>
+      ${reviewTabs('all')}
+      <div class="tip card">复习库里的全部句子，按下次复习的时间排列。完成一课会自动加入这课的句子，点 ☆ 收藏的句子也在这里。</div>
+      ${all.length ? '<input type="search" class="card-q" placeholder="在复习库里搜韩语或中文">' : '<div class="card muted">复习库还是空的。完成第一课后，这课的句子会自动加入。</div>'}
+      <div class="all-cards"></div>`);
+    const box = $('.all-cards', el);
+    const render = (q) => {
+      box.innerHTML = '';
+      const m = (x) => !q || x.c.ko.includes(q) || x.c.zh.includes(q) || (x.c.src || '').includes(q);
+      groups.forEach(([name, xs]) => {
+        const ys = xs.filter(m);
+        if (!ys.length) return;
+        const sec = h(`<section class="card"><h2>${name} <small class="muted">${ys.length} 句</small></h2><div class="pb-list"></div></section>`);
+        const list = $('.pb-list', sec);
+        const show = (n) => { ys.slice(list.children.length, n).forEach((x) => list.appendChild(cardRow(x.c, x.c.src + ' · ' + fmtDue(x.s.due) + (x.s.lapses ? ` · 忘过 ${x.s.lapses} 次` : '')))); };
+        show(60);
+        if (ys.length > 60) { const more = h(`<button class="btn ghost">显示全部 ${ys.length} 句</button>`); more.onclick = () => { show(ys.length); more.remove(); }; sec.appendChild(more); }
+        box.appendChild(sec);
+      });
+      if (!box.children.length && all.length) box.innerHTML = '<div class="card muted">没有找到。</div>';
+    };
+    render('');
+    const q = $('.card-q', el); let tmr = null;
+    if (q) q.oninput = () => { clearTimeout(tmr); tmr = setTimeout(() => render(q.value.trim()), 200); };
   }
 
   /* ═════════════ 情景库 ═════════════ */
