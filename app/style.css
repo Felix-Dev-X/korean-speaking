@@ -368,3 +368,11 @@ a.stat span { color: var(--accent); }
 .review-tabs { margin-bottom: 10px; }
 .card-q { width: 100%; margin-bottom: 12px; }
 .pb-main small.muted { display: block; font-size: .75rem; margin-top: 2px; }
+/* 真实口语 */
+.sp-tb { text-align: center; margin: 10px 0; }
+.sp-tb small, .sp-box .answer small { color: var(--muted); font-size: .78rem; }
+.sp-tb div[lang] { font-size: 1.15rem; color: var(--muted); text-decoration: line-through; text-decoration-color: rgba(127,127,127,.5); }
+.sp-box .answer { text-align: center; margin: 10px 0; }
+.sp-box .answer .ko { font-size: 1.35rem; font-weight: 600; }
+.sp-box .answer .acts { justify-content: center; }
+.sp-old { display: block; color: var(--muted); font-size: .85rem; text-decoration: line-through; text-decoration-color: rgba(127,127,127,.5); }

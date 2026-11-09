@@ -51,7 +51,7 @@ for (const w of K.weeks) {
   for (const c of cats) {
     md += `---\n\n## ${c}\n\n`;
     for (const s of SC.filter((x) => x.cat === c)) {
-      md += `### ${no(s)}. ${s.title}\n\n`;
+      md += `### ${no(s)}. ${s.title}\n\n` + (s.scene ? `> 🎬 ${s.scene}\n\n` : '');
       for (const [r, ko, zh] of s.lines) md += `- **${s.roles[r]}**：${ko}  \n  <sub>${zh}</sub>\n`;
       md += '\n';
     }
@@ -144,6 +144,15 @@ for (const w of K.weeks) {
     md += '<details><summary>原文</summary>\n\n' + d.lines.map(([w, ko, zh]) => `> ${w === 'N' ? '' : `**${w}**：`}${ko}  \n> <sub>${zh}</sub>`).join('\n>\n') + '\n\n</details>\n\n';
   });
   fs.writeFileSync(path.join(out, 'listening.md'), md);
+
+  const nS = K.spoken.reduce((a, c) => a + c.items.length, 0);
+  md = BANNER + `# 真实口语（${nS} 组）\n\n课本教的是"写下来的韩语"，韩国人说话会缩、会省、会加口头禅。用法：遮住右边，看「教科书说法」自己说成「韩国人的说法」。\n\n`;
+  for (const c of K.spoken) {
+    md += `## ${c.cat}\n\n${c.tip}\n\n| 教科书说法 | 韩国人的说法 | 中文 | 要点 |\n|---|---|---|---|\n`;
+    for (const it of c.items) md += `| ${cell(it[0])} | **${cell(it[1])}** | ${cell(it[2])} | ${cell(it[3])} |\n`;
+    md += '\n';
+  }
+  fs.writeFileSync(path.join(out, 'spoken.md'), md);
 }
 
 // AI 陪练提示词
