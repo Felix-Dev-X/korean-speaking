@@ -380,6 +380,8 @@ a.stat span { color: var(--accent); }
 .sp-box .answer .ko { font-size: 1.35rem; font-weight: 600; }
 .sp-box .answer .acts { justify-content: center; }
 .sp-old { display: block; color: var(--muted); font-size: .85rem; text-decoration: line-through; text-decoration-color: rgba(127,127,127,.5); }
+.wk-h { font-size: 1rem; margin: 16px 0 6px; }
+.style-sw { margin: 4px 0 10px; }
 
 </style>
 <header class="hdr">
@@ -5758,6 +5760,268 @@ KSS.unitOrder = [
   'u73', 'u74', 'u75', 'u76', 'u99',   // 第19周
   'u77', 'u78', 'u79', 'u80', 'u100',  // 第20周：长对话①–⑤
 ];
+
+</script>
+<script>
+/* 韩语口语特训 · 课程对话的半语版
+ * 原版是 해요体（对同事、刚认识的人）。这里是"如果对方是同龄朋友"的说法，和原版逐行对应。
+ * 格式：KSS.banmal[课号] = { roles?: 改过的角色名, lines: [韩语 或 [韩语, 中文]] }
+ *   —— 只写韩语时，中文沿用原版；关系变了、中文也要改时写 [韩语, 中文]。
+ */
+window.KSS = window.KSS || {};
+KSS.banmal = {
+  u01: { lines: [
+    '나 어제 면접 보고 왔어.',
+    '아, 진짜? 어땠어?',
+    '근데 면접관이 다섯 명이나 있었어.',
+    '헐, 대박. 엄청 떨렸겠다.',
+    '응, 그래서 첫 질문부터 머리가 하얘졌어.',
+    '어떡해… 그래서? 어떻게 됐어?',
+    '근데 오늘 아침에 합격했다고 연락 왔어!',
+    '와, 진짜 다행이다! 축하해!',
+  ] },
+  u02: { roles: { A: '친구 민수', B: '나' }, lines: [
+    ['어제 왜 안 왔어? 다들 기다렸는데.', '昨天怎么没来？大家都在等你。'],
+    ['아, 미안. 나 어제 과제 마감이었거든.', '啊，抱歉。我昨天作业截止。'],
+    '아, 그 과제? 그거 양 엄청 많잖아.',
+    '응, 진짜 많더라. 새벽 세 시까지 했어.',
+    '헐, 고생했네. 다 끝냈어?',
+    '응, 겨우. 막상 끝내니까 뿌듯하더라.',
+    '다음 모임엔 꼭 와. 고기 먹으러 갈 거거든.',
+    '좋아! 나 고기 진짜 좋아하잖아.',
+  ] },
+  u03: { roles: { A: '나', B: '친구 수진' }, lines: [
+    '와, 밖에 바람 진짜 많이 부네.',
+    '그러게. 사람들 우산 쓴 거 보니까 비도 오나 봐.',
+    '나 우산 없는데…',
+    '편의점 가면 있을걸. 저기 바로 앞에 있잖아.',
+    ['아, 맞다. 근데 너네 집 이쪽 방향이지?', '啊，对了。不过你家是这个方向吧？'],
+    '응, 맞아. 같이 갈래?',
+    '좋아. 가는 길에 커피 한잔할래? 내가 살게.',
+    '오, 좋지!',
+  ] },
+  u04: { lines: [
+    '주말에 뭐 했어?',
+    '음… 그냥 집에서 쉬었어. 근데 일요일엔 홍대 갔다 왔어.',
+    '오, 홍대 어땠어?',
+    '막 사람이 엄청 많았어. 약간 축제 같은 느낌?',
+    '아, 그때 무슨 행사 있었나 보다.',
+    '그런가 봐. 근데 뭘 먹을지 몰라서 한참 돌아다녔어.',
+    '그럼 결국 뭐 먹었어?',
+    '뭐랄까… 그냥 편의점 라면 먹었어. 하하.',
+  ] },
+  u10: { roles: { A: '나', B: '친구 지훈' }, lines: [
+    ['지훈아, 너는 쉬는 날엔 보통 뭐 해?', '智勋，你休息的时候一般干什么？'],
+    '나는 요즘 클라이밍에 빠져 있어. 주말마다 가.',
+    '오, 클라이밍? 언제부터 시작했어?',
+    '한 3개월 됐어. 처음엔 팔이 너무 아팠는데 지금은 괜찮아.',
+    '해 보니까 어때? 많이 어려워?',
+    ['생각보다 재밌어. 성취감이 엄청 커. 너는?', '比想象的有意思。成就感特别强。你呢？'],
+    '나는 그냥 집에서 넷플릭스 봐. 근데 나도 한번 해 보고 싶다.',
+    '그럼 다음 주에 같이 가자! 처음엔 장비 빌리면 돼.',
+  ] },
+  u11: { lines: [
+    ['리웨이야, 이번 주말에 시간 돼? 성수동에 새로 생긴 카페 가 보고 싶어서.', '李伟，这周末有空吗？想去圣水洞新开的咖啡店看看。'],
+    '오, 좋아! 근데 토요일은 좀 애매하고 일요일은 괜찮아.',
+    '그럼 일요일로 하자. 몇 시쯤이 편해?',
+    '오후 두 시쯤 어때? 오전엔 좀 늦잠 자고 싶어서.',
+    '하하, 좋아. 성수역 3번 출구에서 볼까?',
+    '응, 좋아. 혹시 늦으면 바로 연락할게.',
+    '알았어. 그럼 일요일에 봐!',
+    '응, 일요일에 봐!',
+  ] },
+  u21: { lines: [
+    ['리웨이 너는 서울 사는 게 좋아, 아니면 경기도 사는 게 좋아?', '李伟，你觉得住首尔好，还是住京畿道好？'],
+    '음, 내 생각에는 경기도가 더 나은 것 같아.',
+    '진짜? 왜 그렇게 생각해? 출퇴근 힘들잖아.',
+    '그 말도 맞는데, 한편으로는 집이 훨씬 넓고 월세도 싸거든.',
+    '예를 들면? 얼마나 차이 나?',
+    '같은 돈이면 서울은 원룸인데 경기도는 투룸 구할 수 있어.',
+    '듣고 보니 그렇네. 근데 나는 그래도 서울이 좋아. 놀 데가 많아서.',
+    '하하, 결국 다 장단점이 있는 것 같아. 사람마다 다르지.',
+  ] },
+  u22: { roles: { A: '나', B: '친구 은지' }, lines: [
+    '나 저번에 진짜 웃긴 일 있었는데.',
+    '뭔데? 빨리 얘기해 봐.',
+    '지하철에서 어떤 할머니가 나한테 계속 뭐라고 하시는 거야. 근데 사투리라서 하나도 못 알아들었어.',
+    '헐, 그래서?',
+    '그냥 웃으면서 "네, 네" 했지. 그러다가 갑자기 내 손에 귤을 쥐여 주시는 거야.',
+    '하하, 귀여우시다. 왜 주셨대?',
+    '알고 보니까 내가 너무 피곤해 보여서 이거 먹고 힘내라고 하신 거였어.',
+    '와, 감동이다. 한국 할머니들 정 많으시잖아.',
+  ] },
+  u23: { lines: [
+    '이번 방학에 중국 여행 가려고 하는데, 어디가 좋아?',
+    '음, 처음 가는 거면 청두 추천해. 음식이 진짜 맛있거든.',
+    '청두? 거기는 뭐가 유명해?',
+    '한마디로 말하면 훠궈랑 판다야. 거기 가면 꼭 현지 훠궈 먹어 봐.',
+    '많이 매워? 나 매운 거 잘 못 먹는데.',
+    '그럼 원앙탕 시키면 돼. 한국으로 치면 반반 메뉴 같은 거야.',
+    '아, 좋다! 이동은 어떻게 해? 택시 타면 돼?',
+    '택시보다는 차라리 지하철 타는 게 나아. 싸고 빠르거든.',
+  ] },
+  u29: { roles: { A: '나', B: '옛 동료 미영' }, lines: [
+    ['어? 미영아! 오랜만이야!', '咦？美英！好久不见！'],
+    ['어머, 리웨이! 진짜 오랜만이다. 하나도 안 변했네.', '哎呀，李伟！真是好久不见。一点都没变啊。'],
+    ['너도. 얼굴 좋아 보인다. 요즘 어떻게 지내?', '你也是。气色不错。最近怎么样？'],
+    '그럭저럭 지내. 회사 옮겨서 좀 바쁘긴 한데 괜찮아.',
+    '아, 이직했구나. 축하해! 새 회사는 어때?',
+    ['분위기는 좋아. 근데 출근길이 좀 멀어. 너는?', '氛围挺好。不过上班路有点远。你呢？'],
+    '나는 여전히 연구실에서 정신없이 지내. 아, 날씨 많이 추워졌지?',
+    '그러게. 감기 조심해. 다음에 밥 한번 먹자!',
+  ] },
+  u33: { lines: [
+    ['리웨이 너는 형제가 어떻게 돼?', '李伟，你有兄弟姐妹吗？'],
+    '나는 외동이야. 그래서 어렸을 때 좀 외로웠어.',
+    '아, 그렇구나. 부모님은 어떤 분들이셔?',
+    '아빠는 말이 별로 없으신데 엄청 다정하시고, 엄마는 좀 엄하신 편이야.',
+    ['너는 누구 닮았어?', '你像谁？'],
+    '외모는 아빠를 닮았고 성격은 엄마를 닮았대. 하하.',
+    '한국에 혼자 와 있으니까 부모님이 걱정 많이 하시겠다.',
+    '응, 그래서 매일 영상 통화해. 떨어져 사니까 가족이 더 소중하게 느껴져.',
+  ] },
+  u34: { lines: [
+    ['너는 졸업하고 뭐 할 거야? 중국 돌아가?', '你毕业后打算做什么？回中国吗？'],
+    '아직 고민 중인데, 일단 한국에서 취업해 보고 싶어.',
+    '오, 어떤 쪽으로?',
+    'AI 쪽. 연구해 보니까 이 일이 적성에 맞는 것 같더라고.',
+    '좋네. 근데 한국 회사는 야근이 좀 많잖아.',
+    '그래서 연봉보다는 워라밸 좋은 회사를 찾고 있어.',
+    '현명하네. 나는 아직 뭘 해야 할지 모르겠어.',
+    '나도 확실하진 않아. 일단 해 보고, 아니면 그때 다시 생각하려고.',
+  ] },
+  u36: { roles: { A: '친구 수아', B: '나' }, lines: [
+    ['리웨이, 요즘 많이 피곤해 보여. 괜찮아?', '李伟，你最近看起来很累。没事吧？'],
+    '요즘 잠을 잘 못 자서. 밤낮이 좀 바뀌었어.',
+    '아이고, 운동은 해?',
+    '헬스장 등록은 했는데, 솔직히 작심삼일이야.',
+    '하하, 다들 그래. 나는 요즘 아침에 스트레칭만 하는데 몸이 훨씬 가벼워.',
+    '오, 아침에 몇 분 정도 해?',
+    '10분. 짧게라도 매일 하는 게 중요하더라고.',
+    '그 정도면 나도 할 수 있겠다. 내일부터 해 볼게!',
+  ] },
+  u37: { lines: [
+    '한국 와서 제일 놀랐던 게 뭐야?',
+    '음, 나이. 처음 만나면 나이부터 물어보잖아. 처음엔 문화 충격이었어.',
+    '아, 맞아. 존댓말 때문에 그래. 중국은 안 그래?',
+    '중국도 나이는 중요하긴 한데, 한 살 차이로 선배, 후배 나누진 않아.',
+    '그렇구나. 그럼 지금은 어때? 불편해?',
+    '아니, 직접 겪어 보니까 이해가 되더라. 서로 예의를 지키는 거니까.',
+    ['오, 너 완전 한국 사람 다 됐네.', '哦，你完全成韩国人了。'],
+    '하하, 오히려 중국 가면 어색할 때도 있어.',
+  ] },
+  u38: { roles: { A: '친구 현준', B: '나' }, lines: [
+    '오늘 뉴스 봤어? 출산율이 또 역대 최저래.',
+    '응, 나도 기사에서 봤어. 요즘 그게 사회적으로 큰 이슈잖아.',
+    ['너는 왜 그런 것 같아?', '你觉得为什么会这样？'],
+    '내 생각에는 집값이랑 교육비 문제가 제일 큰 것 같아.',
+    '맞아. 근데 나는 일하는 문화도 문제라고 생각해. 야근이 너무 많잖아.',
+    '듣고 보니 그렇네. 중국도 비슷한 고민이 있어.',
+    '아, 그래? 중국은 어떤데?',
+    '정확히는 모르지만, 대도시는 한국이랑 거의 비슷하다고 들었어.',
+  ] },
+  u40: { roles: { A: '친구 민지', B: '나' }, lines: [
+    '연휴 잘 보냈어? 어디 갔다 왔어?',
+    '응, 친구들이랑 강릉 다녀왔어.',
+    '오, 강릉 좋지! 어땠어?',
+    '바다가 사진으로 보는 것보다 훨씬 예쁘더라. 근데 사람이 너무 많았어.',
+    '연휴라서 그렇지. 뭐 맛있는 거 먹었어?',
+    '초당순두부 먹었는데 진짜 입에 잘 맞았어. 아, 그리고 돌아올 때 기차 놓칠 뻔했어.',
+    '하하, 왜?',
+    '카페에서 너무 여유 부리다가. 다음에는 시간 넉넉하게 잡으려고.',
+  ] },
+  u41: { roles: { A: '친구 지훈', B: '나' }, lines: [
+    ['리웨이, 이번 주 토요일에 등산 동호회 같이 갈래? 새벽 5시 출발이야.', '李伟，这周六一起去登山社团吗？凌晨五点出发。'],
+    '와, 새벽 5시? 마음은 진짜 고마운데…',
+    '왜? 등산 별로 안 좋아해?',
+    '아니, 그런 건 아닌데, 내가 요즘 논문 때문에 좀 여유가 없어서.',
+    '아, 그렇구나. 그럼 다음 달은 어때?',
+    '음, 한번 생각해 볼게. 다음에 기회 되면 꼭 같이 가자.',
+    '하하, 알았어. 부담 갖지 마.',
+    ['신경 써 줘서 고마워, 지훈아.', '谢谢你惦记着我，智勋。'],
+  ] },
+  u48: { lines: [
+    ['리웨이, 요즘 한국어 진짜 많이 늘었다. 비결이 뭐야?', '李伟，你最近韩语进步好大。秘诀是什么？'],
+    '고마워. 사실 석 달 전만 해도 말이 하나도 안 나왔어.',
+    '에이, 설마. 그때도 잘했잖아.',
+    '아니야. 들을 줄은 아는데 입이 안 떨어졌거든. 그래서 매일 소리 내서 따라 했어.',
+    '매일? 대단하다. 제일 힘들었던 건 뭐야?',
+    '녹음한 내 목소리를 듣는 거. 처음엔 너무 창피했는데, 들을수록 뭐가 문제인지 보이더라고.',
+    '와, 진짜 멋있다. 앞으로 목표는 뭐야?',
+    '한국 회사에서 회의할 때 내 의견을 자신 있게 말하는 거. 그때까지 계속 연습해야지.',
+  ] },
+  u53: { roles: { A: '친구 수빈（同事）', B: '나' }, lines: [
+    '팀장님 아직 안 오셨네. 회의 시작 5분 전인데.',
+    '지금 비가 많이 와서 길이 막히나 봐.',
+    '그럴 수도 있겠다. 연락도 안 되는데.',
+    '운전 중이라서 전화를 못 받으실지도 몰라.',
+    '맞아. 아, 근데 오늘 발표 자료 팀장님이 가지고 계시잖아.',
+    '아마 메일로도 보내 주셨을 거야. 한번 확인해 볼게.',
+    ['와, 진짜 있네. 너 덕분에 살았다.', '哇，真有。多亏你了。'],
+    '팀장님 도착하시면 많이 피곤하실 텐데, 커피 한 잔 준비해 둘까?',
+  ] },
+  u64: { roles: { A: '지난번에 만난 혜원', B: '나' }, lines: [
+    ['어, 혹시 지난번 모임에서 본 혜원이 맞지?', '哦，你是上次聚会见过的惠媛吧？'],
+    ['아, 리웨이! 반가워. 여기 자주 와?', '啊，李伟！见到你真高兴。你常来这儿吗？'],
+    ['응, 여기서 논문 쓰거든. 너는 요즘 어떻게 지내?', '嗯，我在这儿写论文。你最近怎么样？'],
+    '사실 얼마 전에 회사를 그만뒀어. 내가 진짜 하고 싶은 게 뭔지 찾고 싶어서.',
+    '와, 용기 있다. 나도 비슷한 고민을 했던 적이 있어서 그 마음 알 것 같아. 그래서 요즘은 뭐 해?',
+    '제빵을 배우고 있어. 언젠가 내 가게를 열고 싶어.',
+    ['멋있다! 아, 얘기하다 보니까 시간 가는 줄 몰랐네. 혹시 다음에 네가 만든 빵 먹어 볼 수 있어?', '好帅！啊，聊着聊着都忘了时间。下次能尝尝你做的面包吗？'],
+    '그럼! 다음 주에 시식회 하는데 놀러 와.',
+    '좋아, 꼭 갈게. 오늘 얘기 진짜 즐거웠어. 덕분에 나도 힘이 난다.',
+  ] },
+  u70: { roles: { A: '친구 은서', B: '나' }, lines: [
+    ['리웨이 너는 성공한 삶이 뭐라고 생각해?', '李伟，你觉得什么是成功的人生？'],
+    '음, 남들이 보기에 성공한 것보다 내가 만족하는 삶.',
+    '근데 한국에서는 그게 쉽지 않잖아. 다들 연봉, 집, 차로 비교하니까.',
+    '맞아. 중국도 비슷해. 근데 비교하기 시작하면 끝이 없더라.',
+    ['그럼 너는 어떻게 해?', '那你怎么做？'],
+    '어제의 나랑만 비교하려고 해. 어제보다 한국어 한 문장이라도 더 말하면 그날은 성공이야.',
+    '와, 그거 좋다. 나도 해 봐야겠다.',
+    '그리고 소확행을 많이 만들어. 퇴근길에 좋아하는 노래 듣는 것 같은 거.',
+  ] },
+  u73: { roles: { A: '친구 지훈', B: '나', C: '친구 서연' }, lines: [
+    '이번 회식은 고깃집으로 하자. 학교 앞에 새로 생긴 데가 있는데…',
+    '아, 거기 저번에 가 봤는데 좀 비싸더라.',
+    '잠깐만, 나도 한마디 해도 돼? 고기도 좋은데, 이번엔 중식은 어때? 내가 맛집 알거든.',
+    ['오, 중식? 근데 서연이가 매운 걸 잘 못 먹잖아.', '哦，中餐？不过书妍不太能吃辣啊。'],
+    '맞아. 거기에 덧붙이자면, 거기는 안 매운 메뉴가 더 많아. 꿔바로우랑 딤섬 같은 거.',
+    ['아, 그럼 좋아! 근데 아까 지훈이가 말한 고깃집은?', '啊，那好啊！不过刚才智勋说的烤肉店呢？'],
+    '아, 아까 하던 얘기로 돌아가면, 고깃집은 다음 달 생일 파티 때 가자.',
+    '좋아! 그럼 이번엔 중식, 다음 달엔 고기. 내가 예약할게.',
+  ] },
+  u81: { roles: { A: '조원 민서（同龄）', B: '나' }, lines: [
+    '발표 준비 어떻게 나눌까?',
+    '내가 PPT 만들게. 디자인하는 거 좋아하거든.',
+    '좋아. 그럼 나는 자료 조사할게.',
+    '발표는 누가 할까? 같이 반씩 할래?',
+    '응, 좋아. 언제 한번 모여서 연습할까?',
+    '목요일 저녁 어때? 내가 스터디룸 예약할게.',
+    '완벽해. 커피는 내가 살게!',
+    '하하, 고마워. 그럼 목요일에 보자.',
+  ] },
+  u83: { lines: [
+    '주말에는 보통 뭐 해?',
+    ['요즘은 카페 투어 다녀. 너는?', '最近在逛咖啡店。你呢？'],
+    '어? 나도 카페 엄청 좋아해! 특히 빵 맛있는 데.',
+    '와, 우리 공통점 있네. 혹시 최근에 간 데 중에 추천할 만한 데 있어?',
+    '망원동에 소금빵 맛집 있는데, 진짜 맛있어.',
+    '망원동? 나 합정 살아서 엄청 가까워! 그 집 이름이 뭐야?',
+    '"버터하우스". 아침 일찍 가야 안 팔려.',
+    '그럼 다음에 같이 가 보자! 얘기하다 보니까 시간 가는 줄 몰랐네.',
+  ] },
+  u90: { roles: { A: '친구 지훈', B: '나' }, lines: [
+    '중국 사람들은 진짜 다 매운 거 잘 먹어?',
+    '하하, 그건 좀 오해인 것 같아. 쓰촨이나 후난은 맵게 먹지만, 상하이나 광둥은 오히려 단 음식이 많아.',
+    '아, 그래? 지역마다 그렇게 달라?',
+    '응, 땅이 넓어서 음식도, 말도, 날씨도 다 달라. 한국으로 치면 나라 몇 개가 합쳐진 느낌이야.',
+    '신기하다. 중국 가면 현금 필요해?',
+    '거의 안 써. 요즘은 다 모바일 결제라서, 외국인도 앱에 카드 연결하면 돼.',
+    '오, 편하네. 어디부터 가 보면 좋을까?',
+    '처음이면 상하이 추천해. 고속철도로 항저우랑 쑤저우도 금방 갈 수 있거든. 기회 되면 꼭 가 봐!',
+  ] },
+};
 
 </script>
 <script>
@@ -12748,6 +13012,19 @@ KSS.buildGradePrompt = function () {
   }
 
   /* ═════════════ 每日 ═════════════ */
+  /* 每周固定的口语加练：第 w 周 → 第 w 段半语长聊、按难度排好的第 3w-2…3w 段听力、轮流取各类真实口语 4 组 */
+  function weekExtras(w) {
+    const chats = SCENES.filter((s) => /半语/.test(s.cat));
+    const per = Math.max(1, Math.round(LISTENING.length / WEEKS.length));
+    const cats = (K.spoken || []).map((_, i) => SPOKEN.filter((x) => x.ci === i));
+    const rr = []; for (let k = 0; rr.length < SPOKEN.length; k++) cats.forEach((c) => { if (c[k]) rr.push(c[k]); });
+    const cut = (k) => Math.round((k * rr.length) / WEEKS.length);
+    return {
+      chat: chats.length ? chats[(w - 1) % chats.length] : null,
+      listen: LISTENING.slice((w - 1) * per, w * per),
+      spoken: rr.slice(cut(w - 1), cut(w)),
+    };
+  }
   function viewDay(nStr) {
     const n = Math.max(1, Math.min(TOTAL_DAYS, parseInt(nStr, 10) || 1));
     const info = dayInfo(n);
@@ -12757,7 +13034,8 @@ KSS.buildGradePrompt = function () {
     let el;
     if (info.type === 'review') {
       const due = dueIds().length;
-      const picks = shuffle(SCENES).slice(0, 3);
+      const picks = shuffle(SCENES.filter((s) => !/半语/.test(s.cat))).slice(0, 2);
+      const wk = weekExtras(info.w);
       el = setView(`${head}<h1 class="page-title">复习 + 现实任务</h1>
         <section class="card"><h2>① 复习卡片</h2>
           <p>到期卡片：<b>${due}</b> 张。每张都要<b>出声</b>说出韩语再翻答案。</p>
@@ -12766,10 +13044,30 @@ KSS.buildGradePrompt = function () {
           <p class="muted">这是整个课程最重要的部分：在真实的韩国人面前开口。完成一项勾一项。</p>
           <div class="missions">${info.week.realMissions.map((m, i) => `<label class="mission"><input type="checkbox" data-k="w${info.w}-${i}" ${S.missions['w' + info.w + '-' + i] ? 'checked' : ''}><span>${esc(m)}</span></label>`).join('')}</div>
         </section>
-        <section class="card"><h2>③ 加练：情景对话库（随机 3 个）</h2>
+        <section class="card"><h2>③ 本周口语加练</h2>
+          <p class="muted small">每周固定安排：1 段朋友间半语长聊 + ${wk.listen.length} 段听力理解 + ${wk.spoken.length} 组真实口语。做完的会打 ✅。</p>
+          <h3 class="wk-h">🗣 半语长聊（角色扮演）</h3>
+          <div class="unit-list">${wk.chat ? `<a class="unit-item ${S.scenesDone[wk.chat.id] ? 'done' : ''}" href="#scene-${wk.chat.id}"><span class="u-no">${sceneNo(wk.chat)}</span><span class="u-t"><b>${esc(wk.chat.title)}</b><small>${wk.chat.lines.length} 行 · 你扮演 ${esc(wk.chat.roles[wk.chat.me])}</small></span><span class="u-s">${S.scenesDone[wk.chat.id] ? '✅' : '›'}</span></a>` : ''}</div>
+          <h3 class="wk-h">🎧 听力理解（先别看原文）</h3>
+          <div class="unit-list">${wk.listen.map((d) => `<a class="unit-item ${S.listenDone && S.listenDone[d.id] ? 'done' : ''}" href="#drills-comp-${d.id}"><span class="u-no">${listenNo(d)}</span><span class="u-t"><b>${esc(d.title)}</b><small>难度 ${d.level} · ${d.qs.length} 题${S.listenDone && S.listenDone[d.id] ? ' · 最好 ' + S.listenDone[d.id].best + '/' + d.qs.length : ''}</small></span><span class="u-s">${S.listenDone && S.listenDone[d.id] ? '✅' : '›'}</span></a>`).join('')}</div>
+          <h3 class="wk-h">💬 真实口语：先遮住箭头右边，自己说成口语版</h3>
+          <div class="pb-list wk-spoken"></div>
+        </section>
+        <section class="card"><h2>④ 还有时间：情景库随机 2 个</h2>
           <div class="unit-list">${picks.map((s) => `<a class="unit-item" href="#scene-${s.id}"><span class="u-no">${esc(s.cat.slice(0, 2))}</span><span class="u-t"><b>${esc(s.title)}</b></span><span class="u-s">›</span></a>`).join('')}</div>
           <a class="btn ghost" href="#scenes">查看全部 ${SCENES.length} 个情景 →</a>
         </section>${doneBtn}`);
+      const spBox = $('.wk-spoken', el);
+      wk.spoken.forEach((x) => {
+        const row = h(`<div class="pb-row"><div class="pb-main"><span class="sp-old" lang="ko">${esc(x.tb)}</span><span class="ko" lang="ko">→ ${esc(x.ko)}</span><span class="zh">${esc(x.zh)} <em>${esc(x.note)}</em></span></div><div class="pb-acts"></div></div>`);
+        $('.pb-acts', row).appendChild(speakBtn(x.ko, '▶'));
+        $('.pb-acts', row).appendChild(speakBtn(x.ko, '⚡', 1.3));
+        const mic = h('<button class="btn icon" title="开口打分">🎤</button>');
+        mic.onclick = () => { let chk = $('.check', row); if (!chk) { chk = speakCheck(x.ko); row.appendChild(chk); } chk.start(); };
+        $('.pb-acts', row).appendChild(mic);
+        $('.pb-acts', row).appendChild(starBtn(x.ko, x.zh, '真实口语 · ' + x.cat));
+        spBox.appendChild(row);
+      });
       $$('.missions input', el).forEach((cb) => (cb.onchange = () => { S.missions[cb.dataset.k] = cb.checked; save(); }));
     } else if (info.type === 'test') {
       el = setView(`${head}<h1 class="page-title">第 ${info.w} 周周测 + 本周复盘</h1>
@@ -12970,9 +13268,35 @@ KSS.buildGradePrompt = function () {
     };
     return () => { run++; };
   }
+  /* 课程对话的半语版（data/banmal.js）：逐行对应原版，中文默认沿用原版 */
+  function banmalDialogue(u) {
+    const bm = (K.banmal || {})[u.id];
+    if (!bm) return null;
+    return Object.assign({}, u.dialogue, {
+      roles: bm.roles || u.dialogue.roles,
+      scene: (u.dialogue.scene || '') + '（半语版：假设对方是同龄朋友）',
+      lines: u.dialogue.lines.map((l, i) => { const x = bm.lines[i]; return [l[0], Array.isArray(x) ? x[0] : x, Array.isArray(x) ? x[1] : l[2]]; }),
+    });
+  }
   function tabDialogue(u, body) {
     body.appendChild(h('<div class="tip card">角色扮演：对方的台词会自动播放；轮到你时只显示中文，<b>直接说韩语</b>，说完自动打分。两个角色都要演一遍！</div>'));
-    return rolePlay(body, u.dialogue);
+    const bmd = banmalDialogue(u);
+    if (!bmd) return rolePlay(body, u.dialogue);
+    const sw = h(`<div class="chips filter style-sw"><a class="chip" href="javascript:void 0" data-v="0">해요体（原版）</a><a class="chip" href="javascript:void 0" data-v="1">반말版（对方是同龄朋友）</a></div>`);
+    const holder = h('<div></div>');
+    body.appendChild(sw); body.appendChild(holder);
+    let stop = null;
+    const show = (v) => {
+      if (stop) stop();
+      stopListen(); stopSpeak();
+      holder.innerHTML = '';
+      $$('.chip', sw).forEach((c) => c.classList.toggle('on', +c.dataset.v === v));
+      S.settings.bmView = v; save();
+      stop = rolePlay(holder, v ? bmd : u.dialogue);
+    };
+    $$('.chip', sw).forEach((c) => (c.onclick = () => show(+c.dataset.v)));
+    show(S.settings.bmView ? 1 : 0);
+    return () => { if (stop) stop(); };
   }
 
   /* ── ③ 句型快反 ── */
@@ -13745,6 +14069,7 @@ KSS.buildGradePrompt = function () {
       const tag = `第${lessonNo(u)}课 ${u.title}`;
       u.chunks.forEach((c) => add(c[0], c[1], tag + ' · 句块', '#unit-' + u.id));
       u.dialogue.lines.forEach((l) => add(l[1], l[2], tag + ' · 对话', '#unit-' + u.id));
+      { const bmd = banmalDialogue(u); if (bmd) bmd.lines.forEach((l) => add(l[1], l[2], tag + ' · 对话半语版', '#unit-' + u.id)); }
       u.drill.items.forEach((d) => add(d[1], d[0], tag + ' · 快反', '#unit-' + u.id));
     });
     SCENES.forEach((sc) => sc.lines.forEach((l) => add(l[1], l[2], '情景 · ' + sc.title, '#scene-' + sc.id)));

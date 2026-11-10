@@ -29,6 +29,13 @@ for (const w of K.weeks) {
     u.chunks.forEach((c, i) => { md += `| ${i + 1} | ${cell(c[0])} | ${cell(c[1])} | ${cell(c[2])} |\n`; });
     md += `\n### ② 情景对话：${u.dialogue.scene}\n\n你扮演：**${u.dialogue.roles[u.dialogue.me]}**（两个角色都要练）\n\n`;
     for (const [r, ko, zh] of u.dialogue.lines) md += `- **${u.dialogue.roles[r]}**：${ko}  \n  <sub>${zh}</sub>\n`;
+    const bm = (K.banmal || {})[u.id];
+    if (bm) {
+      const roles = bm.roles || u.dialogue.roles;
+      md += `\n<details><summary>半语版（假设对方是同龄朋友）</summary>\n\n`;
+      u.dialogue.lines.forEach(([r, , zh], i) => { const x = bm.lines[i]; md += `- **${roles[r]}**：${Array.isArray(x) ? x[0] : x}  \n  <sub>${Array.isArray(x) ? x[1] : zh}</sub>\n`; });
+      md += `\n</details>\n`;
+    }
     md += `\n### ③ 句型快反：${u.drill.pattern}\n\n> ${u.drill.tip}\n\n| 提示（5秒内开口） | 参考答案 |\n|---|---|\n`;
     for (const [cue, ko] of u.drill.items) md += `| ${cell(cue)} | ${cell(ko)} |\n`;
     md += `\n### ④ 独白任务（录音 ${u.mission.seconds >= 120 ? Math.round(u.mission.seconds / 60) + ' 分钟' : u.mission.seconds + ' 秒'}）\n\n${u.mission.prompt}\n\n可用表达：${u.mission.hints.map((x) => '`' + x + '`').join('　')}\n\n`;

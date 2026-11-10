@@ -376,3 +376,5 @@ a.stat span { color: var(--accent); }
 .sp-box .answer .ko { font-size: 1.35rem; font-weight: 600; }
 .sp-box .answer .acts { justify-content: center; }
 .sp-old { display: block; color: var(--muted); font-size: .85rem; text-decoration: line-through; text-decoration-color: rgba(127,127,127,.5); }
+.wk-h { font-size: 1rem; margin: 16px 0 6px; }
+.style-sw { margin: 4px 0 10px; }

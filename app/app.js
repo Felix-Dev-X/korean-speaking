@@ -797,6 +797,19 @@
   }
 
   /* ═════════════ 每日 ═════════════ */
+  /* 每周固定的口语加练：第 w 周 → 第 w 段半语长聊、按难度排好的第 3w-2…3w 段听力、轮流取各类真实口语 4 组 */
+  function weekExtras(w) {
+    const chats = SCENES.filter((s) => /半语/.test(s.cat));
+    const per = Math.max(1, Math.round(LISTENING.length / WEEKS.length));
+    const cats = (K.spoken || []).map((_, i) => SPOKEN.filter((x) => x.ci === i));
+    const rr = []; for (let k = 0; rr.length < SPOKEN.length; k++) cats.forEach((c) => { if (c[k]) rr.push(c[k]); });
+    const cut = (k) => Math.round((k * rr.length) / WEEKS.length);
+    return {
+      chat: chats.length ? chats[(w - 1) % chats.length] : null,
+      listen: LISTENING.slice((w - 1) * per, w * per),
+      spoken: rr.slice(cut(w - 1), cut(w)),
+    };
+  }
   function viewDay(nStr) {
     const n = Math.max(1, Math.min(TOTAL_DAYS, parseInt(nStr, 10) || 1));
     const info = dayInfo(n);
@@ -806,7 +819,8 @@
     let el;
     if (info.type === 'review') {
       const due = dueIds().length;
-      const picks = shuffle(SCENES).slice(0, 3);
+      const picks = shuffle(SCENES.filter((s) => !/半语/.test(s.cat))).slice(0, 2);
+      const wk = weekExtras(info.w);
       el = setView(`${head}<h1 class="page-title">复习 + 现实任务</h1>
         <section class="card"><h2>① 复习卡片</h2>
           <p>到期卡片：<b>${due}</b> 张。每张都要<b>出声</b>说出韩语再翻答案。</p>
@@ -815,10 +829,30 @@
           <p class="muted">这是整个课程最重要的部分：在真实的韩国人面前开口。完成一项勾一项。</p>
           <div class="missions">${info.week.realMissions.map((m, i) => `<label class="mission"><input type="checkbox" data-k="w${info.w}-${i}" ${S.missions['w' + info.w + '-' + i] ? 'checked' : ''}><span>${esc(m)}</span></label>`).join('')}</div>
         </section>
-        <section class="card"><h2>③ 加练：情景对话库（随机 3 个）</h2>
+        <section class="card"><h2>③ 本周口语加练</h2>
+          <p class="muted small">每周固定安排：1 段朋友间半语长聊 + ${wk.listen.length} 段听力理解 + ${wk.spoken.length} 组真实口语。做完的会打 ✅。</p>
+          <h3 class="wk-h">🗣 半语长聊（角色扮演）</h3>
+          <div class="unit-list">${wk.chat ? `<a class="unit-item ${S.scenesDone[wk.chat.id] ? 'done' : ''}" href="#scene-${wk.chat.id}"><span class="u-no">${sceneNo(wk.chat)}</span><span class="u-t"><b>${esc(wk.chat.title)}</b><small>${wk.chat.lines.length} 行 · 你扮演 ${esc(wk.chat.roles[wk.chat.me])}</small></span><span class="u-s">${S.scenesDone[wk.chat.id] ? '✅' : '›'}</span></a>` : ''}</div>
+          <h3 class="wk-h">🎧 听力理解（先别看原文）</h3>
+          <div class="unit-list">${wk.listen.map((d) => `<a class="unit-item ${S.listenDone && S.listenDone[d.id] ? 'done' : ''}" href="#drills-comp-${d.id}"><span class="u-no">${listenNo(d)}</span><span class="u-t"><b>${esc(d.title)}</b><small>难度 ${d.level} · ${d.qs.length} 题${S.listenDone && S.listenDone[d.id] ? ' · 最好 ' + S.listenDone[d.id].best + '/' + d.qs.length : ''}</small></span><span class="u-s">${S.listenDone && S.listenDone[d.id] ? '✅' : '›'}</span></a>`).join('')}</div>
+          <h3 class="wk-h">💬 真实口语：先遮住箭头右边，自己说成口语版</h3>
+          <div class="pb-list wk-spoken"></div>
+        </section>
+        <section class="card"><h2>④ 还有时间：情景库随机 2 个</h2>
           <div class="unit-list">${picks.map((s) => `<a class="unit-item" href="#scene-${s.id}"><span class="u-no">${esc(s.cat.slice(0, 2))}</span><span class="u-t"><b>${esc(s.title)}</b></span><span class="u-s">›</span></a>`).join('')}</div>
           <a class="btn ghost" href="#scenes">查看全部 ${SCENES.length} 个情景 →</a>
         </section>${doneBtn}`);
+      const spBox = $('.wk-spoken', el);
+      wk.spoken.forEach((x) => {
+        const row = h(`<div class="pb-row"><div class="pb-main"><span class="sp-old" lang="ko">${esc(x.tb)}</span><span class="ko" lang="ko">→ ${esc(x.ko)}</span><span class="zh">${esc(x.zh)} <em>${esc(x.note)}</em></span></div><div class="pb-acts"></div></div>`);
+        $('.pb-acts', row).appendChild(speakBtn(x.ko, '▶'));
+        $('.pb-acts', row).appendChild(speakBtn(x.ko, '⚡', 1.3));
+        const mic = h('<button class="btn icon" title="开口打分">🎤</button>');
+        mic.onclick = () => { let chk = $('.check', row); if (!chk) { chk = speakCheck(x.ko); row.appendChild(chk); } chk.start(); };
+        $('.pb-acts', row).appendChild(mic);
+        $('.pb-acts', row).appendChild(starBtn(x.ko, x.zh, '真实口语 · ' + x.cat));
+        spBox.appendChild(row);
+      });
       $$('.missions input', el).forEach((cb) => (cb.onchange = () => { S.missions[cb.dataset.k] = cb.checked; save(); }));
     } else if (info.type === 'test') {
       el = setView(`${head}<h1 class="page-title">第 ${info.w} 周周测 + 本周复盘</h1>
@@ -1019,9 +1053,35 @@
     };
     return () => { run++; };
   }
+  /* 课程对话的半语版（data/banmal.js）：逐行对应原版，中文默认沿用原版 */
+  function banmalDialogue(u) {
+    const bm = (K.banmal || {})[u.id];
+    if (!bm) return null;
+    return Object.assign({}, u.dialogue, {
+      roles: bm.roles || u.dialogue.roles,
+      scene: (u.dialogue.scene || '') + '（半语版：假设对方是同龄朋友）',
+      lines: u.dialogue.lines.map((l, i) => { const x = bm.lines[i]; return [l[0], Array.isArray(x) ? x[0] : x, Array.isArray(x) ? x[1] : l[2]]; }),
+    });
+  }
   function tabDialogue(u, body) {
     body.appendChild(h('<div class="tip card">角色扮演：对方的台词会自动播放；轮到你时只显示中文，<b>直接说韩语</b>，说完自动打分。两个角色都要演一遍！</div>'));
-    return rolePlay(body, u.dialogue);
+    const bmd = banmalDialogue(u);
+    if (!bmd) return rolePlay(body, u.dialogue);
+    const sw = h(`<div class="chips filter style-sw"><a class="chip" href="javascript:void 0" data-v="0">해요体（原版）</a><a class="chip" href="javascript:void 0" data-v="1">반말版（对方是同龄朋友）</a></div>`);
+    const holder = h('<div></div>');
+    body.appendChild(sw); body.appendChild(holder);
+    let stop = null;
+    const show = (v) => {
+      if (stop) stop();
+      stopListen(); stopSpeak();
+      holder.innerHTML = '';
+      $$('.chip', sw).forEach((c) => c.classList.toggle('on', +c.dataset.v === v));
+      S.settings.bmView = v; save();
+      stop = rolePlay(holder, v ? bmd : u.dialogue);
+    };
+    $$('.chip', sw).forEach((c) => (c.onclick = () => show(+c.dataset.v)));
+    show(S.settings.bmView ? 1 : 0);
+    return () => { if (stop) stop(); };
   }
 
   /* ── ③ 句型快反 ── */
@@ -1794,6 +1854,7 @@
       const tag = `第${lessonNo(u)}课 ${u.title}`;
       u.chunks.forEach((c) => add(c[0], c[1], tag + ' · 句块', '#unit-' + u.id));
       u.dialogue.lines.forEach((l) => add(l[1], l[2], tag + ' · 对话', '#unit-' + u.id));
+      { const bmd = banmalDialogue(u); if (bmd) bmd.lines.forEach((l) => add(l[1], l[2], tag + ' · 对话半语版', '#unit-' + u.id)); }
       u.drill.items.forEach((d) => add(d[1], d[0], tag + ' · 快反', '#unit-' + u.id));
     });
     SCENES.forEach((sc) => sc.lines.forEach((l) => add(l[1], l[2], '情景 · ' + sc.title, '#scene-' + sc.id)));
