@@ -102,7 +102,7 @@ textarea { resize: vertical; }
 input[type=range] { width: 100%; accent-color: var(--accent); }
 
 /* ── home ── */
-.stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 14px; }
+.stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 14px; }
 .stat { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 12px; text-align: center; }
 .stat b { display: block; font-size: 1.5rem; }
 .stat span { font-size: .78rem; color: var(--muted); }
@@ -378,3 +378,16 @@ a.stat span { color: var(--accent); }
 .sp-old { display: block; color: var(--muted); font-size: .85rem; text-decoration: line-through; text-decoration-color: rgba(127,127,127,.5); }
 .wk-h { font-size: 1rem; margin: 16px 0 6px; }
 .style-sw { margin: 4px 0 10px; }
+/* 复习阶段 / 过关检验 / 回炉 */
+.stage-tag { display: inline-block; font-size: .8rem; padding: 3px 10px; border-radius: 999px; margin: 4px 0 8px; background: var(--line); }
+.stage-tag.s1 { background: var(--ok-soft); color: var(--ok); }
+.stage-tag.s2 { background: var(--good-soft); color: var(--good); }
+.stage-tag.s3 { background: var(--bad-soft); color: var(--bad); }
+.stage1-ko { font-size: 1.3rem; font-weight: 600; text-align: center; margin: 6px 0; }
+.ctx-line { display: flex; align-items: center; gap: 8px; justify-content: center; flex-wrap: wrap; font-size: 1.15rem; margin: 8px 0; }
+.ctx-line small { color: var(--muted); }
+.zh-hint { font-size: 1rem; }
+.btn.miss { font-size: .75rem; padding: 4px 8px; min-width: 0; }
+.mastery .m-box { margin-top: 8px; }
+.mastery .m-res .score { display: inline-block; margin-bottom: 6px; }
+.off-cue { margin: 2px 0 6px; }

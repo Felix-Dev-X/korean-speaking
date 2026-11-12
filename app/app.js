@@ -110,6 +110,9 @@
     custom: {},        // 收藏的句子 { 'x…': { ko, zh, src } }
     shadowDone: {},    // { passageId: 'YYYY-MM-DD' }
     qaDone: {},        // { qaId: count }
+    weak: {},          // 说不好/做错的句子 { 'w…': { ko, zh, src, ctx } }，也在复习库里
+    mastered: {},      // 过关检验通过的课 { unitId: 'YYYY-MM-DD' }
+    recap: {},         // 旧课回炉 { unitId: 'YYYY-MM-DD' }
     listenDone: {},    // 听力理解 { id: { date, best } }
     settings: { rate: 1, voiceURI: '', autoListen: true, apiKey: '', model: 'claude-opus-5-5', correction: true },
   });
@@ -172,7 +175,7 @@
       if (body && typeof body.json === 'string' && (body.updatedAt || 0) > (S.updatedAt || 0)) {
         const o = migrate(JSON.parse(body.json)), d = defaults();
         S = Object.assign(d, o, { settings: Object.assign(d.settings, o.settings || {}) });
-        saveLocal(); toast('已从你的账户同步学习进度'); route();
+        backfillDialogueCards(); saveLocal(); toast('已从你的账户同步学习进度'); route();
       } else if (!body || (S.updatedAt || 0) > (body.updatedAt || 0)) {
         CLOUD.dirty = true; cloudFlush();
       }
@@ -361,6 +364,7 @@
     // auto=true：说话中途的自动打分。分数低时只显示，不算成绩（避免没说完就被判错、跳到下一句）
     const show = (alts, auto) => {
       const best = bestScore(target, alts);
+      if (!auto && best.score < 60 && opts.zh && !opts.noWeak && addWeak(target, opts.zh, opts.src, opts.ctx, opts.ctxZh)) setTimeout(() => result.insertAdjacentHTML('beforeend', '<div class="muted small">🔁 这句已加入复习，今天就会再练到</div>'), 0);
       if (auto && best.score < 80) {
         result.innerHTML = `<div class="heard">识别到：${esc(best.said)}</div><div class="muted small">还没说完就接着说；说完了点「打分」或键盘上的「完成」。</div>`;
         return best.score;
@@ -606,10 +610,14 @@
   function cardsOfUnit(u) {
     const cards = u.chunks.map((c, i) => ({ id: `${u.id}-c${i}`, ko: c[0], zh: c[1], note: c[2] || '', src: u.title }));
     u.drill.items.forEach((d, i) => cards.push({ id: `${u.id}-d${i}`, ko: d[1], zh: d[0], note: '', src: u.title + ' · 快反' }));
+    // 对话里你的台词：带上对方的上一句当"情境"
+    const L = u.dialogue.lines;
+    L.forEach((l, i) => { if (l[0] === u.dialogue.me && i > 0) cards.push({ id: `${u.id}-l${i}`, ko: l[1], zh: l[2], note: '', src: u.title + ' · 对话', ctx: L[i - 1][1], ctxZh: L[i - 1][2], ctxWho: u.dialogue.roles[L[i - 1][0]] }); });
     return cards;
   }
   function cardById(id) {
     if (id[0] === 'x') { const c = S.custom && S.custom[id]; return c ? { id, ko: c.ko, zh: c.zh, note: '', src: '⭐ ' + (c.src || '收藏') } : null; }
+    if (id[0] === 'w') { const c = S.weak && S.weak[id]; return c ? { id, ko: c.ko, zh: c.zh, note: '', src: '🔁 ' + (c.src || '弱项'), ctx: c.ctx || '', ctxZh: c.ctxZh || '' } : null; }
     const uid = id.split('-')[0];
     const u = unitById(uid); if (!u) return null;
     return cardsOfUnit(u).find((c) => c.id === id) || null;
@@ -617,6 +625,36 @@
   function addUnitCards(u) {
     cardsOfUnit(u).forEach((c) => { if (!S.srs[c.id]) S.srs[c.id] = { due: addDays(today(), 1), ivl: 0, ease: 2.3, reps: 0, lapses: 0 }; });
   }
+  /* 说不好、做错的句子自动进复习：已经是课程卡片的就让它今天重新出现（回到"跟读"阶段），否则新建一张弱项卡 */
+  let KO2CARD = null;
+  function cardIdByKo(ko) {
+    if (!KO2CARD) { KO2CARD = new Map(); UNITS.forEach((u) => cardsOfUnit(u).forEach((c) => { const k = norm(c.ko); if (k && !KO2CARD.has(k)) KO2CARD.set(k, c.id); })); }
+    return KO2CARD.get(norm(ko));
+  }
+  function resetCard(id) { const c = S.srs[id] || { ivl: 0, ease: 2.3, reps: 0, lapses: 0 }; c.due = today(); c.ivl = 0; c.reps = 0; S.srs[id] = c; }
+  function addWeak(ko, zh, src, ctx, ctxZh) {
+    ko = targetsOf(ko)[0];
+    if (!ko || !zh) return false;
+    const cid = cardIdByKo(ko);
+    if (cid) { resetCard(cid); save(); return true; }
+    const fid = favId(ko);
+    if (S.custom && S.custom[fid]) { resetCard(fid); save(); return true; }
+    S.weak = S.weak || {};
+    const id = 'w' + fid.slice(1);
+    if (!S.weak[id]) S.weak[id] = { ko, zh, src: src || '', ctx: ctx || '', ctxZh: ctxZh || '' };
+    resetCard(id); save(); return true;
+  }
+  /* 已完成的课补上"对话台词"卡片（旧进度里没有），分散到之后两周，避免一下子堆太多 */
+  function backfillDialogueCards() {
+    // 注意：这里不调用 save()，不更新时间戳——否则新设备上的空进度会显得比云端"新"，把云端进度覆盖掉
+    if (S.dlgCards || !Object.keys(S.unitsDone || {}).length) return;
+    Object.keys(S.unitsDone || {}).forEach((uid) => {
+      const u = unitById(uid); if (!u) return;
+      cardsOfUnit(u).filter((c) => /-l\d+$/.test(c.id)).forEach((c) => { if (!S.srs[c.id]) S.srs[c.id] = { due: addDays(today(), 1 + Math.floor(Math.random() * 14)), ivl: 0, ease: 2.3, reps: 0, lapses: 0 }; });
+    });
+    S.dlgCards = 1; saveLocal();
+  }
+  const isFluent = (id) => S.srs[id] && S.srs[id].ivl >= 21;
   function rateCard(id, grade) {
     const c = S.srs[id] || { due: today(), ivl: 0, ease: 2.3, reps: 0, lapses: 0 };
     if (grade === 0) { c.ivl = 0; c.ease = Math.max(1.3, c.ease - 0.2); c.lapses++; c.reps = 0; c.due = today(); }
@@ -686,7 +724,7 @@
     const name = m[1] === 'home' ? '' : (m[1] || '');
     const arg = m[2];
     const R = {
-      '': viewHome, units: viewUnits, unit: viewUnit, day: viewDay, review: viewReview,
+      '': viewHome, units: viewUnits, unit: viewUnit, day: viewDay, review: viewReview, recap: viewRecap,
       scenes: viewScenes, scene: viewScene, phrases: viewPhrases, pron: viewPron, shadow: viewShadow, qa: viewQA, drills: viewDrills, search: viewSearch,
       ai: viewAI, prefs: viewSettings,
     };
@@ -737,9 +775,10 @@
       <section class="stats">
         <div class="stat"><b>${streak()}</b><span>连续天数</span></div>
         <div class="stat"><b>${doneCount}</b><span>已完成天数</span></div>
+        <a class="stat" href="#units"><b>${Object.keys(S.mastered).length}</b><span>🏅 已掌握课 ›</span></a>
+        <a class="stat" href="#review-all"><b>${Object.keys(S.srs).filter(isFluent).length}</b><span>熟练句子 ›</span></a>
         <a class="stat" href="#review-all"><b>${Object.keys(S.srs).length}</b><span>复习库句子 ›</span></a>
         <a class="stat" href="#review-fav"><b>${Object.keys(S.custom || {}).length}</b><span>⭐ 收藏 ›</span></a>
-        <div class="stat"><b>${Math.round(Object.values(S.log).reduce((a, l) => a + (l.sec || 0), 0) / 60)}</b><span>累计分钟</span></div>
       </section>
       <section class="card">
         <h2>最近 30 天练习时间</h2>
@@ -787,7 +826,7 @@
           ${us.map((u) => `<a class="unit-item ${S.unitsDone[u.id] ? 'done' : ''}" href="#unit-${u.id}">
             <span class="u-no">${lessonNo(u)}</span>
             <span class="u-t"><b>${esc(u.title)}</b><small>${esc(u.ko)}</small></span>
-            <span class="u-s">${S.unitsDone[u.id] ? '✅' : '›'}</span></a>`).join('')}
+            <span class="u-s">${S.mastered[u.id] ? '🏅' : S.unitsDone[u.id] ? '✅' : '›'}</span></a>`).join('')}
           <a class="unit-item extra" href="#day-${(w.week - 1) * 7 + 6}"><span class="u-no">复</span><span class="u-t"><b>复习 + 现实任务</b></span><span class="u-s">${S.daysDone[(w.week - 1) * 7 + 6] ? '✅' : '›'}</span></a>
           <a class="unit-item extra" href="#day-${(w.week - 1) * 7 + 7}"><span class="u-no">测</span><span class="u-t"><b>周测 + 本周复盘</b></span><span class="u-s">${S.daysDone[(w.week - 1) * 7 + 7] ? '✅' : '›'}</span></a>
         </div>
@@ -825,11 +864,15 @@
         <section class="card"><h2>① 复习卡片</h2>
           <p>到期卡片：<b>${due}</b> 张。每张都要<b>出声</b>说出韩语再翻答案。</p>
           <a class="btn primary" href="#review">开始复习 →</a></section>
-        <section class="card"><h2>② 本周现实任务（必须在真实世界完成）</h2>
+        ${recapUnits(info.w).length ? `<section class="card"><h2>② 旧课回炉（脱稿）</h2>
+          <p class="muted small">把以前学过的课对话再演一遍，这次<b>不看中文</b>，只看对方说什么自己接。间隔 1 周、3 周、8 周各回炉一次，忘不掉。</p>
+          <div class="unit-list">${recapUnits(info.w).map(({ back, u }) => `<a class="unit-item ${S.recap[u.id] && S.recap[u.id] >= addDays(today(), -6) ? 'done' : ''}" href="#recap-${u.id}"><span class="u-no">${lessonNo(u)}</span><span class="u-t"><b>${esc(u.title)}</b><small>${back} 周前学的${S.recap[u.id] ? ' · 上次回炉 ' + esc(S.recap[u.id].slice(5)) : ''}</small></span><span class="u-s">${S.recap[u.id] && S.recap[u.id] >= addDays(today(), -6) ? '✅' : '›'}</span></a>`).join('')}</div>
+        </section>` : ''}
+        <section class="card"><h2>③ 本周现实任务（必须在真实世界完成）</h2>
           <p class="muted">这是整个课程最重要的部分：在真实的韩国人面前开口。完成一项勾一项。</p>
           <div class="missions">${info.week.realMissions.map((m, i) => `<label class="mission"><input type="checkbox" data-k="w${info.w}-${i}" ${S.missions['w' + info.w + '-' + i] ? 'checked' : ''}><span>${esc(m)}</span></label>`).join('')}</div>
         </section>
-        <section class="card"><h2>③ 本周口语加练</h2>
+        <section class="card"><h2>④ 本周口语加练</h2>
           <p class="muted small">每周固定安排：1 段朋友间半语长聊 + ${wk.listen.length} 段听力理解 + ${wk.spoken.length} 组真实口语。做完的会打 ✅。</p>
           <h3 class="wk-h">🗣 半语长聊（角色扮演）</h3>
           <div class="unit-list">${wk.chat ? `<a class="unit-item ${S.scenesDone[wk.chat.id] ? 'done' : ''}" href="#scene-${wk.chat.id}"><span class="u-no">${sceneNo(wk.chat)}</span><span class="u-t"><b>${esc(wk.chat.title)}</b><small>${wk.chat.lines.length} 行 · 你扮演 ${esc(wk.chat.roles[wk.chat.me])}</small></span><span class="u-s">${S.scenesDone[wk.chat.id] ? '✅' : '›'}</span></a>` : ''}</div>
@@ -838,7 +881,7 @@
           <h3 class="wk-h">💬 真实口语：先遮住箭头右边，自己说成口语版</h3>
           <div class="pb-list wk-spoken"></div>
         </section>
-        <section class="card"><h2>④ 还有时间：情景库随机 2 个</h2>
+        <section class="card"><h2>⑤ 还有时间：情景库随机 2 个</h2>
           <div class="unit-list">${picks.map((s) => `<a class="unit-item" href="#scene-${s.id}"><span class="u-no">${esc(s.cat.slice(0, 2))}</span><span class="u-t"><b>${esc(s.title)}</b></span><span class="u-s">›</span></a>`).join('')}</div>
           <a class="btn ghost" href="#scenes">查看全部 ${SCENES.length} 个情景 →</a>
         </section>${doneBtn}`);
@@ -848,7 +891,7 @@
         $('.pb-acts', row).appendChild(speakBtn(x.ko, '▶'));
         $('.pb-acts', row).appendChild(speakBtn(x.ko, '⚡', 1.3));
         const mic = h('<button class="btn icon" title="开口打分">🎤</button>');
-        mic.onclick = () => { let chk = $('.check', row); if (!chk) { chk = speakCheck(x.ko); row.appendChild(chk); } chk.start(); };
+        mic.onclick = () => { let chk = $('.check', row); if (!chk) { chk = speakCheck(x.ko, { zh: x.zh, src: '真实口语' }); row.appendChild(chk); } chk.start(); };
         $('.pb-acts', row).appendChild(mic);
         $('.pb-acts', row).appendChild(starBtn(x.ko, x.zh, '真实口语 · ' + x.cat));
         spBox.appendChild(row);
@@ -890,6 +933,11 @@
       <p class="goal">${esc(u.goal)}</p>
       <div class="tabs">${STEPS.map(([k, t]) => `<button class="tab" data-k="${k}">${t}${steps[k] ? ' ✓' : ''}</button>`).join('')}</div>
       <div class="tab-body"></div>
+      <section class="card mastery">
+        <h2>🏅 过关检验 ${S.mastered[u.id] ? `<small class="muted">已过关 ${esc(S.mastered[u.id])}</small>` : ''}</h2>
+        <p class="muted small">四步都练完后来这里：随机抽 5 句，<b>只给中文或对方的话</b>，说出来 80 分以上算过。过 4 句就算掌握这一课；没过的句子自动进复习。</p>
+        <div class="m-box"><button class="btn m-start">${S.mastered[u.id] ? '再测一次' : '开始过关检验'}</button></div>
+      </section>
       <div class="unit-foot">
         <button class="btn primary big finish">${S.unitsDone[u.id] ? '✅ 已完成（再次标记）' : '✅ 完成本课，句子加入复习库'}</button>
         <div class="nav-units">
@@ -921,6 +969,7 @@
     }
     onLeave(() => tabCleanup && tabCleanup());
     $$('.tab', el).forEach((t) => (t.onclick = () => show(t.dataset.k)));
+    $('.m-start', el).onclick = () => masteryCheck(u, $('.m-box', el));
     $('.finish', el).onclick = () => {
       const missing = STEPS.filter(([k]) => !steps[k]).map((s) => s[1]);
       const finish = () => { S.unitsDone[u.id] = today(); addUnitCards(u); save(); completeDay(n); location.hash = '#home'; };
@@ -931,6 +980,44 @@
   }
 
   /* ── ① 句块跟读 ── */
+  function masteryCheck(u, box) {
+    stopSpeak(); stopListen();
+    const items = shuffle(cardsOfUnit(u)).slice(0, 5);
+    const res = [];
+    let i = 0;
+    const next = () => {
+      stopListen();
+      if (i >= items.length) {
+        const ok = res.filter((r) => r.pass).length;
+        res.filter((r) => !r.pass).forEach((r) => addWeak(r.c.ko, r.c.zh, u.title, r.c.ctx || '', r.c.ctxZh || ''));
+        if (ok >= 4) { S.mastered[u.id] = today(); save(); }
+        box.innerHTML = `<div class="m-res"><div class="score ${ok >= 4 ? 'great' : 'ok'}"><b>${ok}</b> / ${items.length}</div>
+          <p>${ok >= 4 ? '🏅 过关！这一课你已经掌握了。' : '还差一点。'}${ok < items.length ? `没过的 ${items.length - ok} 句已加入复习，今天就会再练到。` : ''}</p>
+          ${res.filter((r) => !r.pass).map((r) => `<div class="weak"><span lang="ko">${esc(r.c.ko)}</span><small>${esc(r.c.zh)}</small></div>`).join('')}
+          <button class="btn m-again">再测一次</button></div>`;
+        $$('.weak', box).forEach((w, k) => (w.onclick = () => speak(res.filter((r) => !r.pass)[k].c.ko)));
+        $('.m-again', box).onclick = () => masteryCheck(u, box);
+        return;
+      }
+      const c = items[i];
+      box.innerHTML = `<div class="prog">${i + 1} / ${items.length}</div>
+        ${c.ctx ? `<div class="ctx-line"><small>${esc(c.ctxWho || '对方')}：</small><span lang="ko">${esc(c.ctx)}</span></div><div class="muted small">你接：${esc(c.zh)}</div>` : `<div class="cue">${esc(c.zh)}</div>`}
+        <div class="answer hidden"><div class="ko" lang="ko">${esc(c.ko)}</div></div>
+        <div class="slot"></div>
+        <div class="check-row center-row"><button class="btn ghost m-skip">说不出来</button><button class="btn primary m-next hidden">下一句 ›</button></div>`;
+      const rec = { c, pass: false };
+      res.push(rec);
+      const ans = $('.answer', box);
+      const reveal = () => { ans.classList.remove('hidden'); $('.m-next', box).classList.remove('hidden'); $('.m-skip', box).classList.add('hidden'); };
+      const chk = speakCheck(c.ko, { noWeak: true, onScore: (s) => { rec.pass = s >= 80; reveal(); if (!rec.pass) speak(c.ko); }, onSelf: () => { reveal(); speak(c.ko); } });
+      $('.slot', box).appendChild(chk);
+      $('.m-skip', box).onclick = () => { rec.pass = false; reveal(); speak(c.ko); };
+      $('.m-next', box).onclick = () => { i++; next(); };
+      if (c.ctx) setTimeout(() => speak(c.ctx), 150);
+      chk.start();
+    };
+    next();
+  }
   function tabChunks(u, body) {
     const wrap = h(`<div>
       <div class="tip card">先<b>听 → 跟读 3 遍 → 开口打分</b>。熟了以后打开「遮住韩语」，看中文直接说韩语。「自动跟读」会依次播放并等你跟读。</div>
@@ -950,7 +1037,7 @@
       const acts = $('.acts', card);
       acts.appendChild(speakBtn(c[0], '▶ 播放'));
       acts.appendChild(speakBtn(c[0], '🐢 慢速', 0.7));
-      const chk = speakCheck(c[0], { onSelf: () => card.classList.add('reveal') , onScore: () => card.classList.add('reveal') });
+      const chk = speakCheck(c[0], { zh: c[1], src: u.title, onSelf: () => card.classList.add('reveal') , onScore: () => card.classList.add('reveal') });
       card.appendChild(chk); card.chk = chk;
       $('.ko', card).onclick = () => card.classList.add('reveal');
       list.appendChild(card);
@@ -1027,16 +1114,18 @@
           chat.appendChild(b); b.scrollIntoView({ behavior: 'smooth', block: 'end' });
           await speak(ko); await sleep(300);
         } else {
-          const b = h(`<div class="bubble me"><div class="who">你（${esc(dlg.roles[r])}）</div><div class="zh prompt">${esc(zh)}</div>
+          const b = h(`<div class="bubble me"><div class="who">你（${esc(dlg.roles[r])}）</div>${dlg.offscript ? `<div class="muted small off-cue">脱稿：接着对方的话说</div><div class="zh prompt hidden">${esc(zh)}</div><button class="btn small ghost show-zh">中文提示</button> ` : `<div class="zh prompt">${esc(zh)}</div>`}
             <div class="ko hint" lang="ko">${esc(ko)}</div><button class="btn small ghost show-hint">显示韩语提示</button></div>`);
           chat.appendChild(b); b.scrollIntoView({ behavior: 'smooth', block: 'end' });
-          $('.show-hint', b).onclick = () => b.classList.add('reveal');
+          $('.show-hint', b).onclick = () => { b.classList.add('reveal'); const z = $('.prompt', b); if (z) z.classList.remove('hidden'); };
+          if (dlg.offscript) $('.show-zh', b).onclick = (e) => { $('.prompt', b).classList.remove('hidden'); e.target.remove(); };
           await new Promise((resolve) => {
             const next = h('<button class="btn small primary nxt">下一句 ▶</button>');
             let settled = false;
             const settle = (v) => { if (settled) return; settled = true; resolve(v); };
             const chk = speakCheck(ko, {
-              onScore: (s) => { b.classList.add('reveal'); scores.push(s); if (s < 80) speak(ko); if (s >= 75) setTimeout(() => settle(s), 1400); },
+              zh, src: dlg.src || '对话', ctx: i > 0 ? dlg.lines[i - 1][1] : '', ctxZh: i > 0 ? dlg.lines[i - 1][2] : '',
+              onScore: (s) => { b.classList.add('reveal'); const z = $('.prompt', b); if (z) z.classList.remove('hidden'); scores.push(s); if (s < 80) speak(ko); if (s >= 75) setTimeout(() => settle(s), 1400); },
               onSelf: () => { b.classList.add('reveal'); speak(ko); },
             });
             next.onclick = () => settle(null);
@@ -1066,7 +1155,7 @@
   function tabDialogue(u, body) {
     body.appendChild(h('<div class="tip card">角色扮演：对方的台词会自动播放；轮到你时只显示中文，<b>直接说韩语</b>，说完自动打分。两个角色都要演一遍！</div>'));
     const bmd = banmalDialogue(u);
-    if (!bmd) return rolePlay(body, u.dialogue);
+    if (!bmd) return rolePlay(body, Object.assign({}, u.dialogue, { src: u.title + ' · 对话' }));
     const sw = h(`<div class="chips filter style-sw"><a class="chip" href="javascript:void 0" data-v="0">해요体（原版）</a><a class="chip" href="javascript:void 0" data-v="1">반말版（对方是同龄朋友）</a></div>`);
     const holder = h('<div></div>');
     body.appendChild(sw); body.appendChild(holder);
@@ -1077,11 +1166,38 @@
       holder.innerHTML = '';
       $$('.chip', sw).forEach((c) => c.classList.toggle('on', +c.dataset.v === v));
       S.settings.bmView = v; save();
-      stop = rolePlay(holder, v ? bmd : u.dialogue);
+      stop = rolePlay(holder, Object.assign({}, v ? bmd : u.dialogue, { src: u.title + (v ? ' · 对话半语版' : ' · 对话') }));
     };
     $$('.chip', sw).forEach((c) => (c.onclick = () => show(+c.dataset.v)));
     show(S.settings.bmView ? 1 : 0);
     return () => { if (stop) stop(); };
+  }
+
+  /* ═════════════ 旧课回炉：脱稿角色扮演（轮到你时不显示中文，只看对方说了什么） ═════════════ */
+  function viewRecap(uid) {
+    const u = unitById(uid) || UNITS[0];
+    const bmd = banmalDialogue(u);
+    const el = setView(`<div class="eyebrow">旧课回炉 · 第 ${lessonNo(u)} 课 · 第 ${u.week} 周</div><h1 class="page-title">${esc(u.title)}</h1>
+      <div class="tip card"><b>脱稿模式</b>：轮到你时<b>不显示中文</b>，只看对方说了什么，自己接话。实在想不起来再点「中文提示」或「韩语提示」。说得不好的句子会自动进复习。${S.recap[u.id] ? `<br><span class="muted small">上次回炉：${esc(S.recap[u.id])}</span>` : ''}</div>
+      ${bmd ? '<div class="chips filter style-sw"><a class="chip" href="javascript:void 0" data-v="0">해요体（原版）</a><a class="chip" href="javascript:void 0" data-v="1">반말版</a></div>' : ''}
+      <div class="rp"></div>
+      <div class="unit-foot"><div class="nav-units"><a class="btn ghost" href="#unit-${u.id}">回到这课</a><a class="btn ghost" href="#home">回首页</a></div></div>`);
+    const holder = $('.rp', el);
+    let stop = null;
+    const done = (avg) => { S.recap[u.id] = today(); save(); toast(avg != null ? `回炉完成，平均 ${avg} 分` : '回炉完成'); };
+    const show = (v) => {
+      if (stop) stop();
+      stopListen(); stopSpeak(); holder.innerHTML = '';
+      $$('.style-sw .chip', el).forEach((c) => c.classList.toggle('on', +c.dataset.v === v));
+      stop = rolePlay(holder, Object.assign({}, v ? bmd : u.dialogue, { offscript: true, src: u.title + ' · 对话' }), done);
+    };
+    $$('.style-sw .chip', el).forEach((c) => (c.onclick = () => show(+c.dataset.v)));
+    show(bmd && S.settings.bmView ? 1 : 0);
+    onLeave(() => stop && stop());
+  }
+  /* 复习日要回炉的旧课：1 周前、3 周前、8 周前各 1 课（每周轮换是哪一课） */
+  function recapUnits(w) {
+    return [1, 3, 8].map((b) => { const wb = w - b; if (wb < 1) return null; const us = UNITS_OF_WEEK(wb); return us.length ? { back: b, u: us[(w + b) % us.length] } : null; }).filter(Boolean);
   }
 
   /* ── ③ 句型快反 ── */
@@ -1121,7 +1237,7 @@
       const rec = { cue: it.cue, ko: it.ko, score: null };
       results.push(rec);
       const reveal = () => { if (ans.classList.contains('hidden')) { ans.classList.remove('hidden'); speak(it.ko); } };
-      const chk = speakCheck(it.ko, { onScore: (s) => { rec.score = s; reveal(); }, onSelf: reveal });
+      const chk = speakCheck(it.ko, { zh: it.cue, src: u.title + ' · 快反', onScore: (s) => { rec.score = s; reveal(); }, onSelf: reveal });
       $('.slot', box).appendChild(chk);
       $('.reveal-ans', box).onclick = reveal;
       $('.nxt', box).onclick = () => { stopListen(); i++; render(); };
@@ -1162,7 +1278,7 @@
     const total = Object.keys(S.srs).length;
     const el = setView(`<h1 class="page-title">复习 <small>${mode === 'free' ? '自由加练' : mode === 'favgo' ? '练收藏的句子' : '到期卡片'}</small></h1>
       ${reviewTabs(mode === 'favgo' ? 'fav' : mode || '')}
-      <div class="tip card">看中文 → <b>出声</b>说韩语 → 看答案 → 诚实评价。"忘了"的卡片今天会再出现。复习库共 ${total} 句（完成一课自动加入，点 ☆ 收藏的句子也会加入）。</div>
+      <div class="tip card">每张卡片会随着你练的次数<b>逐步撤掉提示</b>：① 跟读（看着韩语说）→ ② 回想（只看中文）→ ③ 实战（只看对方说了什么，或者 5 秒内说出来）。选「忘了」会退回 ① 重新开始。复习库共 ${total} 句：完成的课、☆ 收藏的、平时说不好的（🔁）都在这里。</div>
       <div class="review-box card"></div>`);
     const box = $('.review-box', el);
     let done = 0;
@@ -1175,8 +1291,16 @@
       }
       const id = queue[0], c = cardById(id);
       if (!c) { queue.shift(); render(); return; }
+      // 三个阶段：① 跟读（新卡/忘了的）② 回想（看中文说）③ 实战（有情境就只给情境，没有就限时 5 秒）
+      const reps = (S.srs[id] || {}).reps || 0;
+      const stage = reps === 0 ? 1 : reps < 3 ? 2 : 3;
+      const ctx3 = stage === 3 && c.ctx;
+      const STAGE = ['', '① 跟读：看着韩语说', '② 回想：看中文说出韩语', ctx3 ? '③ 实战：只看对方的话，自己接' : '③ 实战：5 秒内说出来'];
       box.innerHTML = `<div class="prog">剩余 ${queue.length} 张 · ${esc(c.src)}</div>
-        <div class="cue">${esc(c.zh)}</div>
+        <div class="stage-tag s${stage}">${STAGE[stage]}</div>
+        ${ctx3 ? `<div class="ctx-line"><small>${esc(c.ctxWho || '对方')}：</small><span lang="ko">${esc(c.ctx)}</span></div><div class="cue zh-hint hidden">${esc(c.zh)}</div><button class="btn small ghost show-zh">中文提示（用了就不算「秒出」）</button>`
+          : `<div class="cue">${esc(c.zh)}</div>${stage === 3 ? '<div class="countdown"><div></div></div>' : ''}`}
+        ${stage === 1 ? `<div class="ko stage1-ko" lang="ko">${esc(c.ko)}</div>` : ''}
         <div class="slot"></div>
         <div class="answer hidden"><div class="ko" lang="ko">${esc(c.ko)}</div>${c.note ? `<div class="note">💡 ${esc(c.note)}</div>` : ''}</div>
         <div class="rate hidden">
@@ -1191,9 +1315,16 @@
         $$('.rate .btn', box).forEach((b) => b.classList.remove('suggest'));
         if (score != null) $(score >= 85 ? '.r2' : score >= 60 ? '.r1' : '.r0', box).classList.add('suggest');
       };
-      const chk = speakCheck(c.ko, { onScore: (s) => reveal(s), onSelf: () => reveal(null) });
+      const chk = speakCheck(c.ko, { noWeak: true, onScore: (s) => reveal(s), onSelf: () => reveal(null) });
       $('.slot', box).appendChild(chk);
       $('.show', box).onclick = () => reveal(null);
+      if (ctx3) {
+        const ctxBtn = speakBtn(c.ctx, '▶'); $('.ctx-line', box).appendChild(ctxBtn);
+        $('.show-zh', box).onclick = (e) => { $('.zh-hint', box).classList.remove('hidden'); e.target.remove(); const r2 = $('.r2', box); if (r2) r2.disabled = true; };
+        setTimeout(() => speak(c.ctx), 150);
+      }
+      if (stage === 1) { setTimeout(() => speak(c.ko), 150); rate.classList.remove('hidden'); }
+      if (stage === 3 && !ctx3) requestAnimationFrame(() => { const bar = $('.countdown div', box); if (bar) bar.classList.add('go'); });
       const grade = (g) => {
         stopListen();
         if (mode !== 'free') rateCard(id, g);
@@ -1213,7 +1344,7 @@
     const acts = $('.pb-acts', row);
     acts.appendChild(speakBtn(c.ko, '▶'));
     const mic = h('<button class="btn icon" title="开口打分">🎤</button>');
-    mic.onclick = () => { let chk = $('.check', row); if (!chk) { chk = speakCheck(c.ko); row.appendChild(chk); } chk.start(); };
+    mic.onclick = () => { let chk = $('.check', row); if (!chk) { chk = speakCheck(c.ko, { zh: c.zh, src: c.src || '' }); row.appendChild(chk); } chk.start(); };
     acts.appendChild(mic);
     return row;
   }
@@ -1292,7 +1423,7 @@
         <a class="btn ghost" href="#scenes-${SCENE_CATS.filter((c) => SCENES.some((x) => x.cat === c)).indexOf(s.cat)}">本类情景</a>
         ${i < SCENES.length - 1 ? `<a class="btn ghost" href="#scene-${SCENES[i + 1].id}">下一个 ›</a>` : ''}
       </div></div>`);
-    onLeave(rolePlay($('.rp', el), { roles: s.roles, me: s.me, lines: s.lines, scene: s.scene || '' }, () => { S.scenesDone[s.id] = (S.scenesDone[s.id] || 0) + 1; save(); }));
+    onLeave(rolePlay($('.rp', el), { roles: s.roles, me: s.me, lines: s.lines, scene: s.scene || '', src: '情景 · ' + s.title }, () => { S.scenesDone[s.id] = (S.scenesDone[s.id] || 0) + 1; save(); }));
   }
 
   /* ═════════════ 短文跟读 ═════════════ */
@@ -1336,7 +1467,7 @@
       const mic = h('<button class="btn icon" title="开口打分">🎤</button>');
       mic.onclick = () => {
         let chk = $('.check', row);
-        if (!chk) { chk = speakCheck(ko, { onScore: () => row.classList.add('reveal'), onSelf: () => row.classList.add('reveal') }); row.appendChild(chk); }
+        if (!chk) { chk = speakCheck(ko, { zh, src: '短文 · ' + p.title, onScore: () => row.classList.add('reveal'), onSelf: () => row.classList.add('reveal') }); row.appendChild(chk); }
         chk.start();
       };
       $('.pb-acts', row).appendChild(mic);
@@ -1417,7 +1548,7 @@
       $('.acts', row).appendChild(speakBtn(x.q, '▶ 问题'));
       $('.acts', row).appendChild(speakBtn(x.a, '▶ 参考回答'));
       $('.acts', row).appendChild(starBtn(x.a, x.azh, '百问 · ' + x.q));
-      row.addEventListener('toggle', () => { if (row.open && !$('.check', row)) $('.qa-ans', row).appendChild(speakCheck(x.a)); });
+      row.addEventListener('toggle', () => { if (row.open && !$('.check', row)) $('.qa-ans', row).appendChild(speakCheck(x.a, { zh: x.azh, src: '百问', ctx: x.q, ctxZh: x.qzh })); });
       list.appendChild(row);
     });
     let queue = [], idx = 0, alive = true;
@@ -1453,7 +1584,7 @@
         $('.acts', ans).appendChild(speakBtn(x.a, '▶ 参考回答'));
         $('.acts', ans).appendChild(speakBtn(x.a, '🐢 慢速', 0.75));
         $('.slot', ans).appendChild(h('<p class="muted small">跟读参考回答：</p>'));
-        $('.slot', ans).appendChild(speakCheck(x.a));
+        $('.slot', ans).appendChild(speakCheck(x.a, { zh: x.azh, src: '百问', ctx: x.q, ctxZh: x.qzh }));
         S.qaDone[x.id] = (S.qaDone[x.id] || 0) + 1; save(); logRep();
         speak(x.a);
       };
@@ -1582,7 +1713,7 @@
       acts.appendChild(speakBtn(x.ko, '▶'));
       acts.appendChild(speakBtn(x.ko, '⚡ 快速', 1.3));
       acts.appendChild(starBtn(x.ko, x.zh, '真实口语 · ' + x.cat));
-      $('.slot', box).appendChild(speakCheck(x.ko, { onScore: reveal, onSelf: reveal }));
+      $('.slot', box).appendChild(speakCheck(x.ko, { zh: x.zh, src: '真实口语', onScore: reveal, onSelf: reveal }));
       $('.show', box).onclick = reveal;
       $('.nxt', box).onclick = () => { stopListen(); stopSpeak(); idx++; render(); };
     }
@@ -1596,7 +1727,7 @@
         $('.pb-acts', row).appendChild(speakBtn(it[1], '▶'));
         $('.pb-acts', row).appendChild(speakBtn(it[1], '⚡', 1.3));
         const mic = h('<button class="btn icon" title="开口打分">🎤</button>');
-        mic.onclick = () => { let chk = $('.check', row); if (!chk) { chk = speakCheck(it[1]); row.appendChild(chk); } chk.start(); };
+        mic.onclick = () => { let chk = $('.check', row); if (!chk) { chk = speakCheck(it[1], { zh: it[2], src: '真实口语' }); row.appendChild(chk); } chk.start(); };
         $('.pb-acts', row).appendChild(mic);
         $('.pb-acts', row).appendChild(starBtn(it[1], it[2], '真实口语 · ' + c.cat));
         $('.pb-list', sec).appendChild(row);
@@ -1648,7 +1779,8 @@
         acts.appendChild(speakBtn(good.ko, '▶ 正确回答'));
         acts.appendChild(starBtn(good.ko, good.zh, '接话选择 · ' + x.cue));
         after.appendChild(acts);
-        after.appendChild(speakCheck(good.ko));
+        after.appendChild(speakCheck(good.ko, { zh: good.zh, src: '接话选择', ctx: x.cue, ctxZh: x.cueZh }));
+        if (!o.ok) { addWeak(good.ko, good.zh, '接话选择', x.cue, x.cueZh); after.insertAdjacentHTML('beforeend', '<div class="muted small">🔁 正确回答已加入复习</div>'); }
         $('.nxt', box).classList.remove('hidden');
         speak(good.ko);
         logRep();
@@ -1736,8 +1868,12 @@
       play.onclick = () => speakAs(ko, who);
       $('.pb-acts', row).appendChild(play);
       const mic = h('<button class="btn icon" title="跟读打分">🎤</button>');
-      mic.onclick = () => { let chk = $('.check', row); if (!chk) { chk = speakCheck(ko); row.appendChild(chk); } chk.start(); };
+      mic.onclick = () => { let chk = $('.check', row); if (!chk) { chk = speakCheck(ko, { zh, src: '听力 · ' + d.title }); row.appendChild(chk); } chk.start(); };
       $('.pb-acts', row).appendChild(mic);
+      const li = d.lines.findIndex((x) => x[1] === ko);
+      const miss = h('<button class="btn icon miss" title="这句没听懂：加入复习">没听懂</button>');
+      miss.onclick = () => { addWeak(ko, zh, '听力 · ' + d.title, li > 0 ? d.lines[li - 1][1] : '', li > 0 ? d.lines[li - 1][2] : ''); miss.textContent = '✓ 已加入复习'; miss.disabled = true; };
+      $('.pb-acts', row).appendChild(miss);
       $('.pb-acts', row).appendChild(starBtn(ko, zh, '听力理解 · ' + d.title));
       lines.appendChild(row); rows.push(row);
     });
@@ -1836,7 +1972,7 @@
         const row = h(`<div class="style-row"><div class="style-lab"><b>${lab}</b><small>${desc}</small></div><div class="ko hint" lang="ko">${esc(ko)}</div><div class="acts"></div></div>`);
         $('.acts', row).appendChild(speakBtn(ko, '▶'));
         $('.acts', row).appendChild(starBtn(ko, it[0] + '（' + lab + '）', '语体转换'));
-        row.appendChild(speakCheck(ko, { onScore: () => row.classList.add('reveal'), onSelf: () => row.classList.add('reveal') }));
+        row.appendChild(speakCheck(ko, { zh: it[0] + '（' + lab + '）', src: '语体转换', onScore: () => row.classList.add('reveal'), onSelf: () => row.classList.add('reveal') }));
         rows.appendChild(row);
       });
       $('.show-all', box).onclick = () => $$('.style-row', box).forEach((r) => r.classList.add('reveal'));
@@ -1917,7 +2053,7 @@
         const mic = h('<button class="btn icon" title="开口打分">🎤</button>');
         mic.onclick = () => {
           let chk = $('.check', row);
-          if (!chk) { chk = speakCheck(it[0], { onScore: () => row.classList.add('reveal'), onSelf: () => row.classList.add('reveal') }); row.appendChild(chk); }
+          if (!chk) { chk = speakCheck(it[0], { zh: it[1], src: '句库 · ' + c.cat, onScore: () => row.classList.add('reveal'), onSelf: () => row.classList.add('reveal') }); row.appendChild(chk); }
           chk.start();
         };
         $('.pb-acts', row).appendChild(mic);
@@ -2193,7 +2329,8 @@
     }
     initCloud();
   }
+  backfillDialogueCards();
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
   // 调试/测试用
-  window.__kss = { state: () => S, dayInfo, bestScore, diffHtml, UNITS, SCENES, TOTAL_DAYS, sino, native, NUM_TYPES };
+  window.__kss = { state: () => S, addWeak, cardById, cardsOfUnit, recapUnits, dayInfo, bestScore, diffHtml, UNITS, SCENES, TOTAL_DAYS, sino, native, NUM_TYPES };
 })();
