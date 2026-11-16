@@ -111,7 +111,6 @@
     shadowDone: {},    // { passageId: 'YYYY-MM-DD' }
     qaDone: {},        // { qaId: count }
     weak: {},          // 说不好/做错的句子 { 'w…': { ko, zh, src, ctx } }，也在复习库里
-    mastered: {},      // 过关检验通过的课 { unitId: 'YYYY-MM-DD' }
     recap: {},         // 旧课回炉 { unitId: 'YYYY-MM-DD' }
     listenDone: {},    // 听力理解 { id: { date, best } }
     settings: { rate: 1, voiceURI: '', autoListen: true, apiKey: '', model: 'claude-opus-5-5', correction: true },
@@ -775,7 +774,6 @@
       <section class="stats">
         <div class="stat"><b>${streak()}</b><span>连续天数</span></div>
         <div class="stat"><b>${doneCount}</b><span>已完成天数</span></div>
-        <a class="stat" href="#units"><b>${Object.keys(S.mastered).length}</b><span>🏅 已掌握课 ›</span></a>
         <a class="stat" href="#review-all"><b>${Object.keys(S.srs).filter(isFluent).length}</b><span>熟练句子 ›</span></a>
         <a class="stat" href="#review-all"><b>${Object.keys(S.srs).length}</b><span>复习库句子 ›</span></a>
         <a class="stat" href="#review-fav"><b>${Object.keys(S.custom || {}).length}</b><span>⭐ 收藏 ›</span></a>
@@ -826,7 +824,7 @@
           ${us.map((u) => `<a class="unit-item ${S.unitsDone[u.id] ? 'done' : ''}" href="#unit-${u.id}">
             <span class="u-no">${lessonNo(u)}</span>
             <span class="u-t"><b>${esc(u.title)}</b><small>${esc(u.ko)}</small></span>
-            <span class="u-s">${S.mastered[u.id] ? '🏅' : S.unitsDone[u.id] ? '✅' : '›'}</span></a>`).join('')}
+            <span class="u-s">${S.unitsDone[u.id] ? '✅' : '›'}</span></a>`).join('')}
           <a class="unit-item extra" href="#day-${(w.week - 1) * 7 + 6}"><span class="u-no">复</span><span class="u-t"><b>复习 + 现实任务</b></span><span class="u-s">${S.daysDone[(w.week - 1) * 7 + 6] ? '✅' : '›'}</span></a>
           <a class="unit-item extra" href="#day-${(w.week - 1) * 7 + 7}"><span class="u-no">测</span><span class="u-t"><b>周测 + 本周复盘</b></span><span class="u-s">${S.daysDone[(w.week - 1) * 7 + 7] ? '✅' : '›'}</span></a>
         </div>
@@ -933,11 +931,6 @@
       <p class="goal">${esc(u.goal)}</p>
       <div class="tabs">${STEPS.map(([k, t]) => `<button class="tab" data-k="${k}">${t}${steps[k] ? ' ✓' : ''}</button>`).join('')}</div>
       <div class="tab-body"></div>
-      <section class="card mastery">
-        <h2>🏅 过关检验 ${S.mastered[u.id] ? `<small class="muted">已过关 ${esc(S.mastered[u.id])}</small>` : ''}</h2>
-        <p class="muted small">四步都练完后来这里：随机抽 5 句，<b>只给中文或对方的话</b>，说出来 80 分以上算过。过 4 句就算掌握这一课；没过的句子自动进复习。</p>
-        <div class="m-box"><button class="btn m-start">${S.mastered[u.id] ? '再测一次' : '开始过关检验'}</button></div>
-      </section>
       <div class="unit-foot">
         <button class="btn primary big finish">${S.unitsDone[u.id] ? '✅ 已完成（再次标记）' : '✅ 完成本课，句子加入复习库'}</button>
         <div class="nav-units">
@@ -969,7 +962,6 @@
     }
     onLeave(() => tabCleanup && tabCleanup());
     $$('.tab', el).forEach((t) => (t.onclick = () => show(t.dataset.k)));
-    $('.m-start', el).onclick = () => masteryCheck(u, $('.m-box', el));
     $('.finish', el).onclick = () => {
       const missing = STEPS.filter(([k]) => !steps[k]).map((s) => s[1]);
       const finish = () => { S.unitsDone[u.id] = today(); addUnitCards(u); save(); completeDay(n); location.hash = '#home'; };
@@ -980,44 +972,6 @@
   }
 
   /* ── ① 句块跟读 ── */
-  function masteryCheck(u, box) {
-    stopSpeak(); stopListen();
-    const items = shuffle(cardsOfUnit(u)).slice(0, 5);
-    const res = [];
-    let i = 0;
-    const next = () => {
-      stopListen();
-      if (i >= items.length) {
-        const ok = res.filter((r) => r.pass).length;
-        res.filter((r) => !r.pass).forEach((r) => addWeak(r.c.ko, r.c.zh, u.title, r.c.ctx || '', r.c.ctxZh || ''));
-        if (ok >= 4) { S.mastered[u.id] = today(); save(); }
-        box.innerHTML = `<div class="m-res"><div class="score ${ok >= 4 ? 'great' : 'ok'}"><b>${ok}</b> / ${items.length}</div>
-          <p>${ok >= 4 ? '🏅 过关！这一课你已经掌握了。' : '还差一点。'}${ok < items.length ? `没过的 ${items.length - ok} 句已加入复习，今天就会再练到。` : ''}</p>
-          ${res.filter((r) => !r.pass).map((r) => `<div class="weak"><span lang="ko">${esc(r.c.ko)}</span><small>${esc(r.c.zh)}</small></div>`).join('')}
-          <button class="btn m-again">再测一次</button></div>`;
-        $$('.weak', box).forEach((w, k) => (w.onclick = () => speak(res.filter((r) => !r.pass)[k].c.ko)));
-        $('.m-again', box).onclick = () => masteryCheck(u, box);
-        return;
-      }
-      const c = items[i];
-      box.innerHTML = `<div class="prog">${i + 1} / ${items.length}</div>
-        ${c.ctx ? `<div class="ctx-line"><small>${esc(c.ctxWho || '对方')}：</small><span lang="ko">${esc(c.ctx)}</span></div><div class="muted small">你接：${esc(c.zh)}</div>` : `<div class="cue">${esc(c.zh)}</div>`}
-        <div class="answer hidden"><div class="ko" lang="ko">${esc(c.ko)}</div></div>
-        <div class="slot"></div>
-        <div class="check-row center-row"><button class="btn ghost m-skip">说不出来</button><button class="btn primary m-next hidden">下一句 ›</button></div>`;
-      const rec = { c, pass: false };
-      res.push(rec);
-      const ans = $('.answer', box);
-      const reveal = () => { ans.classList.remove('hidden'); $('.m-next', box).classList.remove('hidden'); $('.m-skip', box).classList.add('hidden'); };
-      const chk = speakCheck(c.ko, { noWeak: true, onScore: (s) => { rec.pass = s >= 80; reveal(); if (!rec.pass) speak(c.ko); }, onSelf: () => { reveal(); speak(c.ko); } });
-      $('.slot', box).appendChild(chk);
-      $('.m-skip', box).onclick = () => { rec.pass = false; reveal(); speak(c.ko); };
-      $('.m-next', box).onclick = () => { i++; next(); };
-      if (c.ctx) setTimeout(() => speak(c.ctx), 150);
-      chk.start();
-    };
-    next();
-  }
   function tabChunks(u, body) {
     const wrap = h(`<div>
       <div class="tip card">先<b>听 → 跟读 3 遍 → 开口打分</b>。熟了以后打开「遮住韩语」，看中文直接说韩语。「自动跟读」会依次播放并等你跟读。</div>
@@ -1253,6 +1207,43 @@
     body.appendChild(h(`<div class="tip card">按"开始录音"后一口气说完，<b>不许停顿超过 3 秒</b>。说完回听自己的录音，再用 AI 批改（或复制提示词到 Claude 网页/App 批改）。</div>`));
     const r = recorder(u.mission.prompt, { hints: u.mission.hints, seconds: u.mission.seconds });
     body.appendChild(r);
+    // 范文：先自己说一遍再看；可以整篇听、逐句播放和跟读
+    const model = (K.models || {})[u.id];
+    if (model) {
+      const sec = h(`<details class="card model"><summary>📝 范文（建议先自己说一遍，再打开对照）</summary>
+        <div class="toolbar"><button class="btn play-model">▶ 听全文</button><button class="btn slow-model">🐢 慢速</button><button class="btn ghost stop-model">■ 停止</button>
+        <label class="switch"><input type="checkbox" class="hide-zh"> 隐藏中文</label></div>
+        <div class="pb-list model-list"></div>
+        <p class="muted small">听完把范文里你喜欢的 2–3 句换成自己的内容，再录一遍。（ ）里是说明，不用读。</p></details>`);
+      const list = $('.model-list', sec), rows = [];
+      model.forEach(([ko, zh]) => {
+        const row = h(`<div class="pb-row"><div class="pb-main"><span class="ko" lang="ko">${esc(ko)}</span><span class="zh">${esc(zh)}</span></div><div class="pb-acts"></div></div>`);
+        $('.pb-acts', row).appendChild(speakBtn(ko, '▶'));
+        const mic = h('<button class="btn icon" title="跟读打分">🎤</button>');
+        mic.onclick = () => { let chk = $('.check', row); if (!chk) { chk = speakCheck(ko, { zh, src: u.title + ' · 范文' }); row.appendChild(chk); } chk.start(); };
+        $('.pb-acts', row).appendChild(mic);
+        $('.pb-acts', row).appendChild(starBtn(ko, zh, u.title + ' · 范文'));
+        list.appendChild(row); rows.push(row);
+      });
+      let run = 0;
+      const playAll = async (rate) => {
+        const my = ++run;
+        for (let k = 0; k < model.length; k++) {
+          if (my !== run) return;
+          rows.forEach((x) => x.classList.remove('focus')); rows[k].classList.add('focus');
+          await speak(model[k][0], rate); await sleep(350);
+        }
+        rows.forEach((x) => x.classList.remove('focus'));
+      };
+      $('.play-model', sec).onclick = () => playAll(1);
+      $('.slow-model', sec).onclick = () => playAll(0.75);
+      $('.stop-model', sec).onclick = () => { run++; stopSpeak(); };
+      $('.hide-zh', sec).onchange = (e) => list.classList.toggle('no-zh', e.target.checked);
+      body.appendChild(sec);
+      const stopModel = () => { run++; };
+      const rc = r.cleanup;
+      r.cleanup = () => { stopModel(); if (rc) rc(); };
+    }
     body.appendChild(h(`<div class="card"><h3>自查清单</h3><ul class="checklist">
       <li>有没有超过 3 秒的沉默？</li><li>本课的句型/句块至少用了 3 个吗？</li>
       <li>句尾是不是只会用 -요 / -습니다？（试着加 -거든요、-더라고요、-잖아요）</li>
@@ -1990,6 +1981,7 @@
       const tag = `第${lessonNo(u)}课 ${u.title}`;
       u.chunks.forEach((c) => add(c[0], c[1], tag + ' · 句块', '#unit-' + u.id));
       u.dialogue.lines.forEach((l) => add(l[1], l[2], tag + ' · 对话', '#unit-' + u.id));
+      ((K.models || {})[u.id] || []).forEach((l) => add(l[0], l[1], tag + ' · 范文', '#unit-' + u.id));
       { const bmd = banmalDialogue(u); if (bmd) bmd.lines.forEach((l) => add(l[1], l[2], tag + ' · 对话半语版', '#unit-' + u.id)); }
       u.drill.items.forEach((d) => add(d[1], d[0], tag + ' · 快反', '#unit-' + u.id));
     });

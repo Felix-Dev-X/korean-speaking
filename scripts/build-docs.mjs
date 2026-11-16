@@ -39,6 +39,8 @@ for (const w of K.weeks) {
     md += `\n### ③ 句型快反：${u.drill.pattern}\n\n> ${u.drill.tip}\n\n| 提示（5秒内开口） | 参考答案 |\n|---|---|\n`;
     for (const [cue, ko] of u.drill.items) md += `| ${cell(cue)} | ${cell(ko)} |\n`;
     md += `\n### ④ 独白任务（录音 ${u.mission.seconds >= 120 ? Math.round(u.mission.seconds / 60) + ' 分钟' : u.mission.seconds + ' 秒'}）\n\n${u.mission.prompt}\n\n可用表达：${u.mission.hints.map((x) => '`' + x + '`').join('　')}\n\n`;
+    const model = (K.models || {})[u.id];
+    if (model) md += `<details><summary>范文（先自己说一遍再看）</summary>\n\n` + model.map(([ko, zh]) => `> ${ko}  \n> <sub>${zh}</sub>`).join('\n>\n') + `\n\n</details>\n\n`;
   }
   md += `---\n\n## 第 ${base + 6} 天：现实任务（必须在真实世界完成）\n\n${w.realMissions.map((m) => `- [ ] ${m}`).join('\n')}\n\n`;
   md += `## 第 ${base + 7} 天：周测（每题录音，不看提示）\n\n${w.test.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\n`;
