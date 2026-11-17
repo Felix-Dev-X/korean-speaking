@@ -50,5 +50,9 @@ if (args.includes('--push') && changes.length) {
   git(['commit', '-q', '-m', msg]);
   git(['push', 'origin', 'HEAD']);
   console.log('\n④ 等线上部署完成并检查');
-  run('node', ['scripts/check-live.mjs', '--wait', '6']);
+  try { run('node', ['scripts/check-live.mjs', '--wait', '6']); }
+  catch (e) {
+    console.error(e.status === 2 ? '  （推送已完成；线上检查留给 GitHub 上的「线上检查」）' : '✗ 线上检查没通过，请看上面的原因');
+    process.exit(e.status === 2 ? 0 : 1);
+  }
 }

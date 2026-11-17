@@ -15,17 +15,23 @@ const local = (fs.readFileSync(path.join(root, 'app', 'index.html'), 'utf8').mat
 const fail = (m) => { console.error('✗ ' + m); process.exitCode = 1; };
 
 async function liveVersion() {
-  const r = await fetch(URL_ + '?nocache=' + Date.now(), { cache: 'no-store' });
+  let r;
+  try { r = await fetch(URL_ + '?nocache=' + Date.now(), { cache: 'no-store' }); }
+  catch (e) { return { err: '连不上（' + ((e.cause && e.cause.code) || e.message) + '）', net: true }; }
   if (!r.ok) return { err: 'HTTP ' + r.status };
   const html = await r.text();
   return { html, v: (html.match(/app-version" content="([^"]+)/) || [])[1] };
 }
 let live = await liveVersion();
 const until = Date.now() + waitMin * 60e3;
-while (live.v !== local && Date.now() < until) {
+while (live.v !== local && !live.net && Date.now() < until) {
   console.log(`  线上版本 ${live.v || live.err}，仓库版本 ${local}，等部署……`);
   await new Promise((r) => setTimeout(r, 20e3));
   live = await liveVersion();
+}
+if (live.net) {
+  console.error(`✗ 这台机器连不上 ${URL_}：${live.err}。\n  可能是网络限制。推送后 GitHub 上的「线上检查」会自动检查，也可以在自己电脑上运行 npm run live。`);
+  process.exit(2);
 }
 if (live.err) { fail('线上网址打不开：' + live.err); process.exit(1); }
 if (live.v !== local) fail(`线上版本 ${live.v} 和仓库版本 ${local} 不一致（部署还没完成，或者推送失败）`);
