@@ -1406,19 +1406,36 @@
   // TOPIK 词汇（data/vocab-topik.js）+ 对话里的生活词汇（data/vocab-daily.js），例句来自 data/vocab-index.js
   const VOCAB = (() => {
     const key = (t) => String(t).replace(/\s/g, '');
-    const book = (K.vocabBook || []).map((r) => ({ ko: r[0], hj: r[1], pos: r[2], zh: r[3], lv: r[4], cat: ['', '初级', '中级', '高级'][r[4]] || '' }));
-    const seen = new Set(book.map((w) => key(w.ko)));
-    const daily = (K.vocabDaily || []).filter((r) => !seen.has(key(r[0]))).map((r) => ({ ko: r[0], hj: '', pos: '', zh: r[1], lv: 0, cat: r[2] }));
+    const LVN = ['', '初级', '中级', '高级'];
+    const book = (K.vocabBook || []).map((r) => ({ ko: r[0], hj: r[1], pos: r[2], zh: r[3], lv: r[4], src: 'book', cat: LVN[r[4]] || '' }));
+    const seen = new Map(book.map((w) => [key(w.ko), w]));
+    // 《韩国语基础词典》学习词汇：书里已有的词只补词典例句，没有的词新加进来
+    const nikl = [];
+    (K.vocabNikl || []).forEach((r) => {
+      const k = key(r[0]), old = seen.get(k);
+      if (old) { if (!old.dex && r[5]) old.dex = r[5]; return; }
+      const w = { ko: r[0], hj: r[1], pos: r[2], zh: r[3], lv: r[4], src: 'nikl', cat: LVN[r[4]] || '', dex: r[5] || '' };
+      nikl.push(w); seen.set(k, w);
+    });
+    // 生活词汇：词典里已有的词打上分类标签（「生活词汇」筛选还能找到），没有的单独加
+    (K.vocabDaily || []).forEach((r) => { const old = seen.get(key(r[0])); if (old) { old.daily = r[2]; if (old.zh !== r[1]) { old.zhDict = old.zh; old.zh = r[1]; } } });
+    const daily = (K.vocabDaily || []).filter((r) => !seen.has(key(r[0]))).map((r) => ({ ko: r[0], hj: '', pos: '', zh: r[1], lv: 0, src: 'daily', cat: r[2], daily: r[2] }));
     const I = K.vocabIndex || {};
-    return book.concat(daily).map((w) => {
+    return book.concat(nikl, daily).map((w) => {
       const x = I[w.ko];
       if (x) Object.assign(w, { ex: x[0], exZh: x[1], exSrc: x[2], exLink: x[3], units: x[4] ? x[4].split(',') : [] }); else w.units = [];
       w.first = w.units.length ? Math.min(...w.units.map((id) => { const u = unitById(id); return u ? UNITS.indexOf(u) : 999; })) : 999;
       return w;
     });
   })();
-  const VSCOPES = [['course', '课程里出现过'], ['all', '全部'], ['1', 'TOPIK 初级'], ['2', 'TOPIK 中级'], ['3', 'TOPIK 高级'], ['daily', '生活词汇']];
-  const inScope = (w, sc) => sc === 'all' || (sc === 'course' ? w.units.length > 0 : sc === 'daily' ? w.lv === 0 : String(w.lv) === sc);
+  const VSCOPES = [['course', '课程里出现过'], ['all', '全部'], ['1', '初级'], ['2', '中级'], ['3', '高级'], ['book', 'TOPIK 必备单词（书）'], ['daily', '生活词汇']];
+  const inScope = (w, sc) => sc === 'all' || (sc === 'course' ? w.units.length > 0 : sc === 'daily' ? !!w.daily : sc === 'book' ? w.src === 'book' : String(w.lv) === sc);
+  const vSrcTag = (w) => [w.src === 'book' ? 'TOPIK书' : w.src === 'nikl' ? '基础词典' : '', w.daily && w.src !== 'daily' ? '生活·' + w.daily : ''].filter(Boolean).join(' · ');
+  // 例句：优先用本课程里出现过的句子（有中文、能跳转），没有就用词典例句
+  const vExHtml = (w, full) => (w.ex
+    ? `<div class="v-ex"><span lang="ko">${esc(w.ex)}</span><small>${esc(w.exZh)}${full ? '' : ' · '}${full ? '</small><small class="muted">出处：' : ''}<a href="${esc(w.exLink)}">${esc(w.exSrc)}</a></small></div>`
+    : w.dex ? `<div class="v-ex"><span lang="ko">${esc(w.dex)}</span><small class="muted">词典例句（《韩国语基础词典》）</small></div>` : '');
+  const vExKo = (w) => w.ex || w.dex || '';
   const vState = (w) => { const v = S.vocab[w.ko]; return !v ? 'new' : v.ivl >= 21 ? 'fluent' : 'learning'; };
   const VSTATE = { new: '未学', learning: '学习中', fluent: '熟练' };
   function rateVocab(ko, grade) {
@@ -1456,7 +1473,7 @@
     const newCount = uid ? newPool.length : Math.min(vNewLeft(), newPool.length);
     const unitWords = uid ? VOCAB.filter((w) => w.units.includes(uid)) : null;
     const el = setView(`<h1 class="page-title">${unit ? `第 ${lessonNo(unit)} 课的单词` : '单词'} <small>${unit ? esc(unit.title) + ' · ' + unitWords.length + ' 个' : '共 ' + VOCAB.length + ' 个'}</small></h1>
-      <div class="tip card">TOPIK 初中高级必备单词 + 课程对话里的生活词汇，大部分常用词配了<b>本课程里真实出现过的例句</b>。可以按每天的计划背，也可以在下面的总表里<b>点任何一个词直接学</b>，都会算进学习记录。</div>
+      <div class="tip card">${VOCAB.length.toLocaleString()} 个词：国立国语院《韩国语基础词典》的初、中、高级学习词汇 + TOPIK 必备单词 + 课程对话里的生活词汇。常用词配了<b>本课程里真实出现过的例句</b>，其余配词典例句。可以按每天的计划背，也可以在下面的总表里<b>点任何一个词直接学</b>，都会算进学习记录。</div>
       <section class="card vocab-today">
         <div class="v-stats"><div><b>${due.length}</b><span>待复习</span></div><div><b>${newCount}</b><span>${uid ? '本课新词' : lim <= 0 ? '新词（不限）' : '今天还剩新词'}</span></div><div><b>${vNewToday()}</b><span>今天已学新词</span></div><div><b>${learned}</b><span>已学</span></div><div><b>${fluent}</b><span>熟练</span></div></div>
         ${uid ? '' : `<div class="v-row"><span class="muted small">新词从哪里来</span><div class="chips">${VSCOPES.map(([k, t]) => `<a class="chip ${sc === k ? 'on' : ''}" href="javascript:void 0" data-sc="${k}">${t}</a>`).join('')}</div></div>
@@ -1479,7 +1496,7 @@
       <div class="chips v-index">${['全部', 'ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'].map((c, i) => `<a class="chip ${i ? '' : 'on'}" href="javascript:void 0" data-c="${i ? c : ''}">${c}</a>`).join('')}</div>
       <div class="v-bar"><span class="v-count muted small"></span><button class="btn small v-learn-list">▶ 背这个列表</button></div>
       <div class="v-list card"></div>
-      <p class="muted small">点任何一个词可以展开：看例句、直接标「不认识 / 模糊 / 认识」（算进学习记录），或者从这个词开始往下背。<br>TOPIK 词汇来自《完全掌握·新韩国语能力考试 TOPIK 必备单词》（金龙一著，华东理工大学出版社）正序版词汇表，仅供个人学习使用。</p>`);
+      <p class="muted small">点任何一个词可以展开：看例句、直接标「不认识 / 模糊 / 认识」（算进学习记录），或者从这个词开始往下背。<br>学习词汇和词典例句来自国立国语院《韩国语基础词典》（krdict.korean.go.kr），CC BY-SA 2.0 KR。TOPIK 必备单词来自《完全掌握·新韩国语能力考试 TOPIK 必备单词》（金龙一著，华东理工大学出版社）正序版词汇表，仅供个人学习使用。</p>`);
 
     // ── 设置 ──
     $$('.vocab-today .chip[data-sc]', el).forEach((c) => (c.onclick = () => { S.settings.vocabScope = c.dataset.sc; save(); viewVocab(arg); }));
@@ -1523,13 +1540,14 @@
       if (old) { old.remove(); r.classList.remove('open'); return; }
       r.classList.add('open');
       const d = h(`<div class="v-detail">
-        <div class="muted small">${[w.cat, w.hj, w.pos].filter(Boolean).map(esc).join(' · ')}${w.units.length ? ` · 出现在 ${w.units.length} 课` : ''}</div>
-        ${w.ex ? `<div class="v-ex"><span lang="ko">${esc(w.ex)}</span><small>${esc(w.exZh)} · <a href="${esc(w.exLink)}">${esc(w.exSrc)}</a></small></div>` : '<div class="muted small">课程里还没有用到这个词的例句。</div>'}
+        <div class="muted small">${[w.cat, vSrcTag(w), w.hj, w.pos].filter(Boolean).map(esc).join(' · ')}${w.units.length ? ` · 出现在 ${w.units.length} 课` : ''}</div>
+        ${w.zhDict ? `<div class="small">词典释义：${esc(w.zhDict)}</div>` : ''}
+        ${vExHtml(w) || '<div class="muted small">还没有这个词的例句。</div>'}
         <div class="check-row v-acts"></div>
         <div class="check-row rate"><button class="btn small r0">😵 不认识</button><button class="btn small r1">🤔 模糊</button><button class="btn small r2">✅ 认识</button></div>
         <div class="muted small v-nextinfo">${esc(vNext(w.ko))}</div>
         <div class="check-row"><button class="btn small ghost v-from">▶ 从这个词开始往下背</button></div></div>`);
-      if (w.ex) $('.v-acts', d).appendChild(speakBtn(w.ex, '▶ 例句'));
+      if (vExKo(w)) $('.v-acts', d).appendChild(speakBtn(vExKo(w), '▶ 例句'));
       $('.v-acts', d).appendChild(starBtn(w.ex || w.ko, w.ex ? w.exZh : w.zh, '单词 · ' + w.ko));
       const rate = (g) => {
         rateVocab(w.ko, g);
@@ -1605,8 +1623,9 @@
         <div class="slot"></div>
         <div class="v-back-side hidden">
           ${dir === 'ko' ? `<div class="v-mean">${esc(w.zh)}</div>` : `<div class="v-front" lang="ko">${esc(w.ko)}</div>`}
-          <div class="muted small center-row">${[w.hj, w.pos, w.cat].filter(Boolean).map(esc).join(' · ')}</div>
-          ${w.ex ? `<div class="v-ex"><span lang="ko">${esc(w.ex)}</span><small>${esc(w.exZh)}</small><small class="muted">出处：<a href="${esc(w.exLink)}">${esc(w.exSrc)}</a></small></div>` : ''}
+          ${w.zhDict ? `<div class="muted small center-row">词典释义：${esc(w.zhDict)}</div>` : ''}
+          <div class="muted small center-row">${[w.hj, w.pos, w.cat, vSrcTag(w)].filter(Boolean).map(esc).join(' · ')}</div>
+          ${vExHtml(w, true)}
           <div class="check-row center-row acts"></div>
         </div>
         <div class="check-row center-row"><button class="btn ghost v-flip">翻面</button></div>
@@ -1614,7 +1633,7 @@
       const back = $('.v-back-side', box), rate = $('.rate', box);
       const flip = () => { back.classList.remove('hidden'); rate.classList.remove('hidden'); $('.v-flip', box).classList.add('hidden'); speak(w.ko); };
       $('.acts', back).appendChild(speakBtn(w.ko, '▶ 单词'));
-      if (w.ex) $('.acts', back).appendChild(speakBtn(w.ex, '▶ 例句'));
+      if (vExKo(w)) $('.acts', back).appendChild(speakBtn(vExKo(w), '▶ 例句'));
       $('.acts', back).appendChild(starBtn(w.ex || w.ko, w.ex ? w.exZh : w.zh, '单词 · ' + w.ko));
       if (dir === 'ko') { setTimeout(() => speak(w.ko), 150); }
       else { $('.slot', box).appendChild(speakCheck(w.ko, { noWeak: true, onScore: flip, onSelf: flip })); }

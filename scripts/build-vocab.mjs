@@ -91,8 +91,10 @@ function matcher(word, pos) {
 }
 
 /* ── 词表 ── */
-const book = K.vocabBook || [], daily = K.vocabDaily || [];
+const book = (K.vocabBook || []).slice(), daily = K.vocabDaily || [];
 const bookSet = new Set(book.map((r) => r[0].replace(/\s/g, '')));
+// 《韩国语基础词典》学习词汇里书上没有的词也一起找例句
+for (const r of K.vocabNikl || []) { const k = r[0].replace(/\s/g, ''); if (!bookSet.has(k)) { bookSet.add(k); book.push([r[0], r[1], /动|形/.test(r[2]) ? '他' : r[2] || '名', r[3], r[4]]); } }
 const dupDaily = daily.filter((r) => bookSet.has(r[0].replace(/\s/g, '')));
 const words = book.map((r) => [r[0], r[2]]).concat(daily.filter((r) => !bookSet.has(r[0].replace(/\s/g, ''))).map((r) => [r[0], r.length > 3 ? r[3] : (/다$/.test(r[0]) ? '他' : '名')]));
 
@@ -131,5 +133,5 @@ const lines = ['/* 自动生成：node scripts/build-vocab.mjs（改了课程内
 for (const [k, v] of Object.entries(index)) lines.push('  ' + JSON.stringify(k) + ': ' + JSON.stringify(v) + ',');
 lines.push('};');
 fs.writeFileSync(path.join(ROOT, 'app', 'data', 'vocab-index.js'), lines.join('\n') + '\n');
-console.log(`✓ 单词 ${words.length} 个（TOPIK ${book.length} + 生活词汇 ${words.length - book.length}），找到例句 ${found} 个，用时 ${((Date.now() - t0) / 1000).toFixed(1)} 秒`);
+console.log(`✓ 单词 ${words.length} 个（TOPIK 书 + 基础词典 ${book.length} + 生活词汇 ${words.length - book.length}），找到例句 ${found} 个，用时 ${((Date.now() - t0) / 1000).toFixed(1)} 秒`);
 if (dupDaily.length) console.log('  生活词汇里和 TOPIK 重复、已跳过：' + dupDaily.map((r) => r[0]).join('、'));
