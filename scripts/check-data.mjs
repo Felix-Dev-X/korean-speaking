@@ -36,7 +36,7 @@ if ((K.vocabBook || []).length < 2500) err('TOPIK 词汇没加载或数量不对
 for (const r of K.vocabBook || []) if (r.length !== 5 || !r[0] || !r[3] || ![1, 2, 3].includes(r[4])) err('TOPIK 词汇格式不对：' + r[0]);
 for (const r of K.vocabDaily || []) if (r.length < 3 || !r[0] || !r[1]) err('生活词汇格式不对：' + r[0]);
 if ((K.vocabNikl || []).length < 10000) err('基础词典学习词汇没加载或数量不对');
-for (const r of K.vocabNikl || []) if (r.length !== 6 || !r[0] || !r[3] || ![1, 2, 3].includes(r[4])) { err('基础词典词汇格式不对：' + r[0]); break; }
+for (const r of K.vocabNikl || []) if (r.length !== 7 || !r[0] || !r[3] || ![1, 2, 3].includes(r[4]) || typeof r[6] !== 'string') { err('基础词典词汇格式不对：' + r[0]); break; }
 if (!K.vocabIndex) err('缺少 vocab-index.js，请运行 node scripts/build-vocab.mjs');
 const sids = new Set();
 for (const s of K.scenes) {

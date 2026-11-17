@@ -134,26 +134,41 @@
     o.daysDone = nd; o.schedule = 2;
     return o;
   }
+  /* 存储格式：单词和复习卡的进度存成紧凑数组 [到期日(天数), 间隔, 难度×100, 次数, 忘记次数]，
+     体积不到原来的一半（学的越多越重要：云端同步是一整条记录，太大会同步失败）。内存里仍然是对象。 */
+  function dayNum(d) { return Math.round(Date.parse(d) / 864e5); }
+  function numDay(n) { return new Date(n * 864e5).toISOString().slice(0, 10); }
+  function packCards(m) { const o = {}; for (const k in m || {}) { const c = m[k]; o[k] = [dayNum(c.due), c.ivl || 0, Math.round((c.ease || 2.3) * 100), c.reps || 0, c.lapses || 0]; } return o; }
+  function unpackCards(m) { const o = {}; for (const k in m || {}) { const c = m[k]; o[k] = Array.isArray(c) ? { due: numDay(c[0]), ivl: c[1], ease: c[2] / 100, reps: c[3], lapses: c[4] } : c; } return o; }
+  function packState(st) { return Object.assign({}, st, { v: 3, srs: packCards(st.srs), vocab: packCards(st.vocab), settings: Object.assign({}, st.settings, { apiKey: '' }) }); }
+  function unpackState(o) { if (o && typeof o === 'object') { o.srs = unpackCards(o.srs); o.vocab = unpackCards(o.vocab); } return o; }
   function load() {
     try {
       const raw = localStorage.getItem(STORE_KEY);
       if (raw) {
-        const o = migrate(JSON.parse(raw)), d = defaults();
+        const o = migrate(unpackState(JSON.parse(raw))), d = defaults();
         return Object.assign(d, o, { settings: Object.assign(d.settings, o.settings || {}) });
       }
     } catch (e) { /* 隐私模式等情况下忽略 */ }
     return defaults();
   }
   let S = load();
-  function saveLocal() { try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (e) { /* ignore */ } }
+  function saveLocal() {
+    try { const st = packState(S); st.settings.apiKey = S.settings.apiKey; localStorage.setItem(STORE_KEY, JSON.stringify(st)); }
+    catch (e) { if (!saveLocal.warned) { saveLocal.warned = true; toast('⚠ 本机存储空间不够，进度可能没存上。请到「设置」导出备份。', 6000); } }
+  }
   /* 网页版：进度同步到观看者自己的账户（db 里 data/users/<id>/progress，只有本人能读写） */
-  const CLOUD = { state: CLAUDE ? 'pending' : 'off', ready: false, ref: null, timer: null, writing: false, again: false, dirty: false };
-  function cloudPayload() { return { json: JSON.stringify(Object.assign({}, S, { settings: Object.assign({}, S.settings, { apiKey: '' }) })), updatedAt: S.updatedAt || 0 }; }
+  const CLOUD = { state: CLAUDE ? 'pending' : 'off', ready: false, ref: null, timer: null, writing: false, again: false, dirty: false, lastOk: 0, err: '', size: 0, warned: false };
+  function cloudPayload() { const json = JSON.stringify(packState(S)); CLOUD.size = json.length; return { json, updatedAt: S.updatedAt || 0 }; }
   async function cloudFlush() {
     if (!CLOUD.ready || !CLOUD.dirty) return;
     if (CLOUD.writing) { CLOUD.again = true; return; }
     CLOUD.writing = true; CLOUD.dirty = false;
-    try { await CLOUD.ref.set(cloudPayload()); } catch (e) { CLOUD.dirty = true; }
+    try { await CLOUD.ref.set(cloudPayload()); CLOUD.lastOk = Date.now(); CLOUD.err = ''; }
+    catch (e) {
+      CLOUD.dirty = true; CLOUD.err = (e && (e.message || e.code)) || '未知错误';
+      if (!CLOUD.warned) { CLOUD.warned = true; toast('⚠ 进度没能同步到账户。请到「设置」查看原因，并先导出一份备份。', 7000); }
+    }
     CLOUD.writing = false;
     if (CLOUD.again) { CLOUD.again = false; cloudFlush(); }
   }
@@ -174,12 +189,13 @@
       CLOUD.ref = ref; CLOUD.ready = true; CLOUD.state = 'on';
       const body = snap.exists ? snap.data() : null;
       if (body && typeof body.json === 'string' && (body.updatedAt || 0) > (S.updatedAt || 0)) {
-        const o = migrate(JSON.parse(body.json)), d = defaults();
+        const o = migrate(unpackState(JSON.parse(body.json))), d = defaults();
         S = Object.assign(d, o, { settings: Object.assign(d.settings, o.settings || {}) });
+        CLOUD.lastOk = Date.now();
         backfillDialogueCards(); saveLocal(); toast('已从你的账户同步学习进度'); route();
       } else if (!body || (S.updatedAt || 0) > (body.updatedAt || 0)) {
         CLOUD.dirty = true; cloudFlush();
-      }
+      } else CLOUD.lastOk = Date.now();
     } catch (e) { CLOUD.state = 'off'; CLOUD.ready = false; }
   }
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') cloudFlush(); });
@@ -714,6 +730,41 @@
   }
   function markNav(name) {
     $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.r === name));
+    $$('#tabbar a').forEach((a) => a.classList.toggle('active', a.dataset.t === (TAB_OF[name] || 'home')));
+  }
+  /* 手机底部导航：今天 · 课程 · 练习 · 单词 · 复习 · 更多 */
+  const TAB_OF = { '': 'home', units: 'units', unit: 'units', day: 'units', recap: 'units', vocab: 'vocab', review: 'review',
+    practice: 'practice', scenes: 'practice', scene: 'practice', phrases: 'practice', shadow: 'practice', qa: 'practice', drills: 'practice', pron: 'practice', ai: 'practice',
+    prefs: 'more', search: 'more' };
+  // 「练习」页和「更多」里的入口
+  const PRACTICE = () => [
+    ['#scenes', '🎭', '情景对话库', `${SCENES.length} 个日常场景，角色扮演`],
+    ['#phrases', '💬', '功能句库', `${(K.phrasebank || []).reduce((a, c) => a + c.items.length, 0)} 句按功能分类的高频句`],
+    ['#shadow', '🗣', '短文跟读', `${PASSAGES.length} 篇 1 分钟独白，影子跟读`],
+    ['#qa', '❓', '口语百问', `${QA.length} 个常被问到的问题和参考回答`],
+    ['#drills', '🎯', '专项练习', '数字、听辨、真实口语、接话、听力理解、语体转换'],
+    ['#pron', '👄', '发音', '发音规则和易错音'],
+    ['#ai', '🤖', 'AI 陪练', '自由对话和批改'],
+  ];
+  function updateTabBadges() {
+    const bd = (t, n) => { const b = $(`#tabbar a[data-t="${t}"] .tb-badge`); if (b) { b.textContent = n > 99 ? '99+' : String(n || ''); b.classList.toggle('hidden', !n); } };
+    try { bd('review', dueIds().length); bd('vocab', vDue().length); } catch (e) { /* ignore */ }
+  }
+  function openMore() {
+    closeMore();
+    const items = [['#search', '🔍', '搜索'], ['#prefs', '⚙️', '设置'], ['#review-fav', '⭐', '收藏的句子'], ['#review-all', '🗂', '全部复习卡']]
+      .concat(PRACTICE().map((x) => x.slice(0, 3)));
+    const sh = h(`<div class="sheet" id="more-sheet" role="dialog" aria-label="更多"><div class="sheet-in">
+      <div class="sheet-h"><b>更多</b><button class="btn small ghost sheet-x" aria-label="关闭">✕</button></div>
+      <div class="sheet-grid">${items.map(([href, ic, t]) => `<a href="${href}"><i>${ic}</i><span>${esc(t)}</span></a>`).join('')}</div></div></div>`);
+    sh.onclick = (e) => { if (e.target === sh || e.target.closest('.sheet-x') || e.target.closest('a')) closeMore(); };
+    document.body.appendChild(sh);
+  }
+  function closeMore() { const x = $('#more-sheet'); if (x) x.remove(); }
+  function viewPractice() {
+    setView(`<h1 class="page-title">练习 <small>课程之外的专项和素材</small></h1>
+      <div class="hub">${PRACTICE().map(([href, ic, t, d]) => `<a class="hub-item card" href="${href}"><i>${ic}</i><span><b>${t}</b><small>${esc(d)}</small></span></a>`).join('')}</div>
+      <div class="check-row"><a class="btn ghost" href="#search">🔍 搜索全部句子和单词</a></div>`);
   }
   function route() {
     cleanups.forEach((f) => { try { f(); } catch (e) { /* ignore */ } });
@@ -727,15 +778,17 @@
     const R = {
       '': viewHome, units: viewUnits, unit: viewUnit, day: viewDay, review: viewReview, recap: viewRecap, vocab: viewVocab,
       scenes: viewScenes, scene: viewScene, phrases: viewPhrases, pron: viewPron, shadow: viewShadow, qa: viewQA, drills: viewDrills, search: viewSearch,
-      ai: viewAI, prefs: viewSettings,
+      ai: viewAI, prefs: viewSettings, practice: viewPractice,
     };
     markNav(name === 'unit' || name === 'day' ? 'units' : name === 'scene' ? 'scenes' : name);
     if (name && !R[name]) {
       setView('<div class="card"><h2>找不到这个页面</h2><p>可能是网页刚更新、浏览器还在用旧版本。请<b>刷新页面</b>（手机下拉刷新；电脑按 Ctrl+Shift+R）。</p><a class="btn primary" href="#home">回首页</a></div>');
       return;
     }
+    closeMore();
     (R[name] || viewHome).call(null, arg);
     updateHeaderStats();
+    updateTabBadges();
   }
 
   /* ═════════════ 首页 ═════════════ */
@@ -1404,7 +1457,12 @@
 
   /* ═════════════ 单词 ═════════════ */
   // TOPIK 词汇（data/vocab-topik.js）+ 对话里的生活词汇（data/vocab-daily.js），例句来自 data/vocab-index.js
-  const VOCAB = (() => {
+  /* 单词表。网页版（GitHub）里《韩国语基础词典》的 1.5 万词（3 MB）不跟页面一起加载：
+     先用 TOPIK 书 + 生活词汇，页面打开后在后台加载完整词库，加载完重建 VOCAB。
+     （claude.ai 网页版是单文件，词库已经在里面了。） */
+  let VOCAB = buildVocab();
+  let VOCAB_FULL = !!K.vocabNikl;
+  function buildVocab() {
     const key = (t) => String(t).replace(/\s/g, '');
     const LVN = ['', '初级', '中级', '高级'];
     const book = (K.vocabBook || []).map((r) => ({ ko: r[0], hj: r[1], pos: r[2], zh: r[3], lv: r[4], src: 'book', cat: LVN[r[4]] || '' }));
@@ -1413,8 +1471,8 @@
     const nikl = [];
     (K.vocabNikl || []).forEach((r) => {
       const k = key(r[0]), old = seen.get(k);
-      if (old) { if (!old.dex && r[5]) old.dex = r[5]; return; }
-      const w = { ko: r[0], hj: r[1], pos: r[2], zh: r[3], lv: r[4], src: 'nikl', cat: LVN[r[4]] || '', dex: r[5] || '' };
+      if (old) { if (!old.dex && r[5]) old.dex = r[5]; if (!old.def && r[6]) old.def = r[6]; return; }
+      const w = { ko: r[0], hj: r[1], pos: r[2], zh: r[3], lv: r[4], src: 'nikl', cat: LVN[r[4]] || '', dex: r[5] || '', def: r[6] || '' };
       nikl.push(w); seen.set(k, w);
     });
     // 生活词汇：词典里已有的词打上分类标签（「生活词汇」筛选还能找到），没有的单独加
@@ -1427,7 +1485,33 @@
       w.first = w.units.length ? Math.min(...w.units.map((id) => { const u = unitById(id); return u ? UNITS.indexOf(u) : 999; })) : 999;
       return w;
     }).map((w, i) => ((w.idx = i), w));
-  })();
+  }
+  function loadFullVocab() {
+    if (VOCAB_FULL) return Promise.resolve(true);
+    if (loadFullVocab.p) return loadFullVocab.p;
+    const l = document.querySelector('link[data-lazy="vocab"]');
+    if (!l) return Promise.resolve(false);
+    loadFullVocab.p = new Promise((res) => {
+      const sc = document.createElement('script');
+      sc.src = l.getAttribute('href');
+      sc.onload = () => { VOCAB = buildVocab(); VOCAB_FULL = !!K.vocabNikl; if (VOCAB_FULL) afterFullVocab(); res(VOCAB_FULL); };
+      sc.onerror = () => { loadFullVocab.p = null; res(false); };
+      document.head.appendChild(sc);
+    });
+    return loadFullVocab.p;
+  }
+  // 词库加载完：刷新正在看的、显示单词数的页面（正在背词时不打断）
+  function afterFullVocab() {
+    const name = (location.hash.replace(/^#\/?/, '').match(/^[a-z]+/) || [''])[0];
+    if (name === 'search') {
+      const sq = $('#app .sq'), t = $('#app .page-title small');
+      if (t) t.textContent = `${(SEARCH_INDEX || []).length.toLocaleString()} 句 · ${VOCAB.length.toLocaleString()} 个单词`;
+      if (sq && sq.value.trim()) sq.dispatchEvent(new Event('input'));
+    } else if (name === 'vocab') {
+      if (!$('#app .v-session:not(.hidden)') && !$('#app .v-item.open')) route();
+      else { const n = $('#app .v-loading'); if (n) n.remove(); }
+    } else if (name === '' || name === 'home') route();
+  }
   // 词表只分两类：「TOPIK 书」和「生活常用」（= 课程里出现过的词 + 生活词汇）；其余的词不分类，只在「全部」里
   const isLife = (w) => w.units.length > 0 || !!w.daily;
   const VSCOPES = [['life', '生活常用'], ['book', 'TOPIK 书'], ['all', '全部']];
@@ -1439,6 +1523,8 @@
     ? `<div class="v-ex"><span lang="ko">${esc(w.ex)}</span><small>${esc(w.exZh)}${full ? '' : ' · '}${full ? '</small><small class="muted">出处：' : ''}<a href="${esc(w.exLink)}">${esc(w.exSrc)}</a></small></div>`
     : w.dex ? `<div class="v-ex"><span lang="ko">${esc(w.dex)}</span><small class="muted">词典例句（《韩国语基础词典》）</small></div>` : '');
   const vExKo = (w) => w.ex || w.dex || '';
+  // 词典自带的中文解释句（帮助分清近义词、看懂词典例句）
+  const vDefHtml = (w, cls) => (w.zhDict || w.def ? `<div class="v-def ${cls || ''}">${w.zhDict ? `<div>词典释义：${esc(w.zhDict)}</div>` : ''}${w.def ? `<div>📖 ${esc(w.def)}</div>` : ''}</div>` : '');
   const vState = (w) => { const v = S.vocab[w.ko]; return !v ? 'new' : v.ivl >= 21 ? 'fluent' : 'learning'; };
   const VSTATE = { new: '未学', learning: '学习中', fluent: '熟练' };
   function rateVocab(ko, grade) {
@@ -1466,6 +1552,7 @@
   const vNext = (ko) => { const v = S.vocab[ko]; return !v ? '' : v.due <= today() ? '今天复习' : '下次复习 ' + fmtDue(v.due); };
 
   function viewVocab(arg) {
+    if (!VOCAB_FULL) loadFullVocab();
     const uid = arg && /^u\d+$/.test(arg) ? arg : null;
     const unit = uid ? unitById(uid) : null;
     const sc = vDeck();
@@ -1493,20 +1580,22 @@
           <div class="v-plan-n"><b>${newCount}</b><span>${uid ? '本课新词' : '新词' + (lim <= 0 ? '（不限）' : '')}</span></div>
           <button class="btn primary big v-start">▶ 开始背${due.length + newCount ? `（${due.length + newCount}）` : ''}</button>
         </div>
+        <div class="v-modes"><span class="muted small">练习方式</span><div class="chips">${VMODES.map(([k, t]) => `<a class="chip ${vMode() === k ? 'on' : ''}" href="javascript:void 0" data-m="${k}">${t}</a>`).join('')}</div></div>
         <div class="v-sub muted small">${uid ? `这一课出现的 ${unitWords.length} 个词` : `今天已学新词 ${vNewToday()} 个 · 一共已学 ${learned.toLocaleString()} · 熟练 ${fluent.toLocaleString()}`}</div>
         ${!uid && newCount === 0 && newPool.length ? '<div class="check-row"><button class="btn v-extra">今天的新词背完了，再背 20 个</button></div>' : ''}
         ${uid ? `<div class="check-row"><a class="btn ghost" href="#vocab">全部单词</a><a class="btn ghost" href="#unit-${uid}">回到这课</a></div>` : `
         <div class="v-decks-h muted small">背哪一类（新词从这里来）</div>
         <div class="v-decks">${VSCOPES.map(deckCard).join('')}</div>
-        <details class="v-set"><summary>⚙ 每天新词 ${lim > 0 ? lim + ' 个' : '不限'} · ${dir === 'ko' ? '看韩语想中文' : '看中文说韩语'}</summary>
+        <details class="v-set"><summary>⚙ 每天新词 ${lim > 0 ? lim + ' 个' : '不限'} · 卡片${dir === 'ko' ? '看韩语想中文' : '看中文说韩语'}</summary>
           <div class="v-row"><span class="muted small">每天新词</span>
             <input type="number" class="v-daily" min="0" max="9999" step="5" value="${lim > 0 ? lim : ''}" placeholder="不限" inputmode="numeric">
             <div class="chips">${[10, 20, 50, 100, 200].map((n) => `<a class="chip ${lim === n ? 'on' : ''}" href="javascript:void 0" data-n="${n}">${n}</a>`).join('')}<a class="chip ${lim <= 0 ? 'on' : ''}" href="javascript:void 0" data-n="0">不限</a></div></div>
-          <div class="v-row"><span class="muted small">方向</span><select class="v-dir"><option value="ko" ${dir === 'ko' ? 'selected' : ''}>看韩语 → 想中文</option><option value="zh" ${dir === 'zh' ? 'selected' : ''}>看中文 → 说韩语</option></select></div>
+          <div class="v-row"><span class="muted small">卡片方向</span><select class="v-dir"><option value="ko" ${dir === 'ko' ? 'selected' : ''}>看韩语 → 想中文</option><option value="zh" ${dir === 'zh' ? 'selected' : ''}>看中文 → 说韩语</option></select></div>
           <p class="muted small">到期要复习的词不受类别限制，全部都会出现。</p>
         </details>`}
         <div class="v-session hidden"></div>
       </section>
+      ${VOCAB_FULL ? '' : '<div class="v-loading muted small">⏳ 正在加载完整词库（1.5 万词），马上就好……</div>'}
       <h2 class="sec-title">总表</h2>
       <div class="v-filters">
         <input type="search" class="v-q" placeholder="搜韩语、中文或汉字">
@@ -1520,6 +1609,7 @@
       <p class="muted small">点任何一个词可以展开：看例句、直接标「不认识 / 模糊 / 认识」（算进学习记录），或者从这个词开始往下背。<br>学习词汇和词典例句来自国立国语院《韩国语基础词典》（krdict.korean.go.kr），CC BY-SA 2.0 KR。TOPIK 书的单词来自《完全掌握·新韩国语能力考试 TOPIK 必备单词》（金龙一著，华东理工大学出版社）正序版词汇表，仅供个人学习使用。</p>`);
 
     // ── 设置 ──
+    $$('.v-modes .chip', el).forEach((c) => (c.onclick = () => { S.settings.vocabMode = c.dataset.m; save(); $$('.v-modes .chip', el).forEach((x) => x.classList.toggle('on', x === c)); toast(VMODE_TIP[c.dataset.m]); }));
     $$('.v-deck', el).forEach((c) => (c.onclick = () => { S.settings.vocabScope = c.dataset.sc; save(); viewVocab(arg); }));
     const setDaily = (n) => { S.settings.vocabDaily = Math.max(0, Math.floor(+n || 0)); save(); viewVocab(arg); };
     $$('.v-set .chip[data-n]', el).forEach((c) => (c.onclick = () => setDaily(c.dataset.n)));
@@ -1532,7 +1622,7 @@
       if (!queue.length) { toast('没有要背的词了 🎉'); return; }
       box.classList.remove('hidden'); $('.v-start', el).classList.add('hidden');
       const ex = $('.v-extra', el); if (ex) ex.classList.add('hidden');
-      $$('.v-decks, .v-decks-h, .v-set', el).forEach((x) => x.classList.add('hidden'));
+      $$('.v-decks, .v-decks-h, .v-set, .v-modes', el).forEach((x) => x.classList.add('hidden'));
       box.scrollIntoView({ behavior: 'smooth', block: 'start' });
       vSession(box, queue, () => viewVocab(arg), extraFrom);
     };
@@ -1569,7 +1659,7 @@
       r.classList.add('open');
       const d = h(`<div class="v-detail">
         <div class="muted small">${[w.hj, w.pos].filter(Boolean).map(esc).join(' · ')}${w.units.length ? `${w.hj || w.pos ? ' · ' : ''}出现在 ${w.units.length} 课` : ''}</div>
-        ${w.zhDict ? `<div class="small">词典释义：${esc(w.zhDict)}</div>` : ''}
+        ${vDefHtml(w)}
         ${vExHtml(w) || '<div class="muted small">还没有这个词的例句。</div>'}
         <div class="check-row v-acts"></div>
         <div class="check-row rate"><button class="btn small r0">😵 不认识</button><button class="btn small r1">🤔 模糊</button><button class="btn small r2">✅ 认识</button></div>
@@ -1628,14 +1718,122 @@
     if (uid) f.value = 'life';
     fill3();
     if (uid) v3.value = uid;
+    // 从全站搜索跳过来：把词放进搜索框，并展开这个词
+    const focus = VOCAB_FOCUS; VOCAB_FOCUS = null;
+    if (focus) q.value = focus.q;
     render();
     if (!io) { while (shown < rows.length) loadMore(); }
+    if (focus && focus.ko) {
+      const r = $$('.v-item', list).find((x) => x.dataset.ko === focus.ko), w = VOCAB.find((x) => x.ko === focus.ko);
+      if (r && w) { toggleDetail(r, w); setTimeout(() => r.scrollIntoView({ block: 'center' }), 60); }
+    } else if (focus) setTimeout(() => $('.v-filters', el).scrollIntoView({ block: 'start' }), 60);
+  }
+  let VOCAB_FOCUS = null;
+  /* 全站搜索里的单词：完全一样 > 开头一样 > 包含 > 中文/汉字里包含 */
+  function vSearch(q) {
+    const out = [];
+    VOCAB.forEach((w) => {
+      let r = -1;
+      if (w.ko === q) r = 0; else if (w.ko.startsWith(q)) r = 1; else if (w.ko.includes(q)) r = 2;
+      else if (w.zh.includes(q) || (w.zhDict && w.zhDict.includes(q))) r = 3; else if (w.hj && w.hj.includes(q)) r = 4;
+      if (r >= 0) out.push([r, w]);
+    });
+    return out.sort((a, b) => a[0] - b[0] || a[1].ko.length - b[1].ko.length || a[1].lv - b[1].lv).map((x) => x[1]);
+  }
+
+  /* 单词练习方式：卡片（自评）/ 听音选义 / 选择题快刷 / 听写。选择题和听写由答对答错自动记分：
+     答对 = 认识，答错 = 不认识（几张之后再出一次）。 */
+  const VMODES = [['card', '🃏 卡片'], ['listen', '👂 听音选义'], ['choice', '⚡ 选择题'], ['dict', '✍️ 听写']];
+  const VMODE_TIP = { card: '卡片：自己想，翻面后自评', listen: '听音选义：只听发音，从 4 个中文里选', choice: '选择题快刷：看韩语选中文，答对自动下一个', dict: '听写：听发音，打出韩语' };
+  const vMode = () => (VMODES.some((m) => m[0] === S.settings.vocabMode) ? S.settings.vocabMode : 'card');
+  // 选项里的中文：最多两个义项，去掉括号里的韩语提示（不然等于把答案告诉你了）
+  const vZhShort = (z) => z.split('；').slice(0, 2).join('；').replace(/（[^）]*[가-힣][^）]*）|\([^)]*[가-힣][^)]*\)/g, '').trim() || z;
+  // 干扰项：同词性、等级相近、中文意思不重叠的 3 个词
+  function vOptions(w) {
+    const pos = (w.pos || '').split('·')[0], head = (z) => z.split(/[；，、]/)[0].trim();
+    const used = new Set([head(w.zh)]), out = [];
+    for (let t = 0; t < 600 && out.length < 3; t++) {
+      const x = VOCAB[Math.floor(Math.random() * VOCAB.length)];
+      if (x.ko === w.ko || x.zh === w.zh) continue;
+      if (t < 400 && ((x.pos || '').split('·')[0] !== pos || Math.abs((x.lv || 1) - (w.lv || 1)) > 1)) continue;
+      const k = head(x.zh);
+      if (!k || used.has(k) || w.zh.includes(k) || x.zh.includes(head(w.zh))) continue;
+      used.add(k); out.push(x);
+    }
+    return shuffle(out.concat([w]));
+  }
+  const vNorm = (t) => String(t).replace(/[\s.,!?~·\-]/g, '');
+  // 听写对比：逐字标出打错的地方
+  function vDiff(ans, ko) {
+    const a = vNorm(ans), k = vNorm(ko);
+    return [...k].map((ch, i) => (a[i] === ch ? esc(ch) : `<mark>${esc(ch)}</mark>`)).join('');
+  }
+  function vQuizCard(box, w, mode, head, grade) {
+    const after = `<div class="v-after hidden">
+        <div class="v-res"></div>
+        <div class="v-front" lang="ko">${esc(w.ko)}</div><div class="v-mean">${esc(w.zh)}</div>
+        <div class="muted small center-row">${[w.hj, w.pos].filter(Boolean).map(esc).join(' · ')}</div>
+        ${vDefHtml(w, 'center')}${vExHtml(w, true)}
+        <div class="check-row center-row acts"></div>
+        <div class="check-row center-row"><button class="btn primary v-next">下一个 ›</button></div></div>`;
+    if (mode === 'dict') {
+      box.innerHTML = `${head}<div class="center-row"><button class="btn big v-play">🔊 再听一遍</button></div>
+        <div class="v-dict"><input type="text" class="v-in" lang="ko" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="听到什么，打出来（韩语）">
+        <button class="btn primary v-ok">核对</button></div>
+        <div class="check-row center-row"><button class="btn small ghost v-hint">看中文提示</button><button class="btn small ghost v-skip">不会</button></div>
+        <div class="v-hinttxt muted center-row hidden">${esc(vZhShort(w.zh))}${w.pos ? ' · ' + esc(w.pos) : ''}</div>${after}`;
+    } else {
+      const opts = vOptions(w);
+      box.innerHTML = `${head}${mode === 'listen' ? '<div class="center-row"><button class="btn big v-play">🔊 再听一遍</button></div>' : `<div class="v-front" lang="ko">${esc(w.ko)}</div>`}
+        <div class="v-opts">${opts.map((o, i) => `<button class="btn v-opt" data-i="${i}">${esc(vZhShort(o.zh))}</button>`).join('')}</div>
+        <div class="check-row center-row"><button class="btn small ghost v-skip">不知道</button></div>${after}`;
+      const pick = (i) => {
+        const ok = opts[i] === w;
+        $$('.v-opt', box).forEach((b, j) => { b.disabled = true; if (opts[j] === w) b.classList.add('right'); else if (j === i) b.classList.add('wrong'); });
+        finish(ok);
+      };
+      $$('.v-opt', box).forEach((b) => (b.onclick = () => pick(+b.dataset.i)));
+      $('.v-skip', box).onclick = () => pick(-1);
+    }
+    const play = () => speak(w.ko);
+    if ($('.v-play', box)) { $('.v-play', box).onclick = play; setTimeout(play, 150); }
+    const aft = $('.v-after', box);
+    $('.acts', aft).appendChild(speakBtn(w.ko, '▶ 单词'));
+    if (vExKo(w)) $('.acts', aft).appendChild(speakBtn(vExKo(w), '▶ 例句'));
+    $('.acts', aft).appendChild(starBtn(w.ex || w.ko, w.ex ? w.exZh : w.zh, '单词 · ' + w.ko));
+    let g = 0;
+    $('.v-next', aft).onclick = () => grade(g);
+    function finish(ok, extra) {
+      g = ok ? 2 : 0;
+      $$('.v-skip, .v-hint', box).forEach((b) => b.classList.add('hidden'));
+      $('.v-res', aft).innerHTML = (ok ? '<b class="good-txt">✅ 对了</b>' : '<b class="bad-txt">❌ 不对</b>' + (extra || '')) + '<div class="muted small">' + (ok ? '算「认识」' : '算「不认识」，过几个会再出一次') + '</div>';
+      aft.classList.remove('hidden');
+      if (mode !== 'listen' || !ok) speak(w.ko);
+      // 选择题快刷：答对 0.9 秒后自动下一个
+      if (ok && mode === 'choice') { aft.classList.add('brief'); setTimeout(() => { if (box.contains(aft)) grade(2); }, 900); }
+      else $('.v-next', aft).focus({ preventScroll: true });
+    }
+    if (mode === 'dict') {
+      const inp = $('.v-in', box);
+      const check = () => {
+        if (!inp.value.trim()) { inp.focus(); return; }
+        const ok = vNorm(inp.value) === vNorm(w.ko);
+        inp.disabled = true; $('.v-ok', box).disabled = true;
+        finish(ok, ok ? '' : `<div class="v-diff">你写的：<span lang="ko">${esc(inp.value.trim())}</span><br>正确的：<span lang="ko">${vDiff(inp.value, w.ko)}</span></div>`);
+        if (!ok) { const ty = h('<div class="check-row center-row"><button class="btn small ghost v-typo">只是打错字，算「模糊」</button></div>'); $('.v-res', box).appendChild(ty); $('.v-typo', ty).onclick = () => grade(1); }
+      };
+      $('.v-ok', box).onclick = check;
+      inp.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); check(); } };
+      $('.v-hint', box).onclick = () => { $('.v-hinttxt', box).classList.remove('hidden'); $('.v-hint', box).classList.add('hidden'); };
+      $('.v-skip', box).onclick = () => { inp.disabled = true; $('.v-ok', box).disabled = true; finish(false); };
+      setTimeout(() => { try { inp.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }, 200);
+    }
   }
 
   /* 背词卡片：看韩语想中文（或看中文说韩语）→ 翻面 → 不认识 / 模糊 / 认识。
      morePool：背完后可以"再背 20 个新词"（不受每天上限限制） */
   function vSession(box, queue, onEnd, morePool) {
-    const dir = S.settings.vocabDir || 'ko';
+    const dir = S.settings.vocabDir || 'ko', mode = vMode();
     let done = 0, total = queue.length;
     function render() {
       stopListen();
@@ -1650,13 +1848,20 @@
       }
       const w = queue[0];
       const isNew = !S.vocab[w.ko];
-      box.innerHTML = `<div class="prog">${done + 1} / ${total}${isNew ? ' · 新词' : ' · 复习'}${vSrcTag(w) ? ' · ' + esc(vSrcTag(w)) : ''}<button class="btn small ghost v-quit">结束</button></div>
+      const head = `<div class="prog">${done + 1} / ${total}${isNew ? ' · 新词' : ' · 复习'}${vSrcTag(w) ? ' · ' + esc(vSrcTag(w)) : ''}<button class="btn small ghost v-quit">结束</button></div>`;
+      const grade = (g) => { rateVocab(w.ko, g); queue.shift(); done++; if (g === 0) { queue.splice(Math.min(queue.length, 4), 0, w); total++; } render(); };
+      if (mode !== 'card') {
+        vQuizCard(box, w, mode, head, grade);
+        $('.v-quit', box).onclick = () => { queue.length = 0; render(); };
+        return;
+      }
+      box.innerHTML = `${head}
         ${dir === 'ko' ? `<div class="v-front" lang="ko">${esc(w.ko)}</div>` : `<div class="v-front zh-front">${esc(w.zh)}</div>${w.pos ? `<div class="muted small center-row">${esc(w.pos)}</div>` : ''}`}
         <div class="slot"></div>
         <div class="v-back-side hidden">
           ${dir === 'ko' ? `<div class="v-mean">${esc(w.zh)}</div>` : `<div class="v-front" lang="ko">${esc(w.ko)}</div>`}
-          ${w.zhDict ? `<div class="muted small center-row">词典释义：${esc(w.zhDict)}</div>` : ''}
           <div class="muted small center-row">${[w.hj, w.pos].filter(Boolean).map(esc).join(' · ')}</div>
+          ${vDefHtml(w, 'center')}
           ${vExHtml(w, true)}
           <div class="check-row center-row acts"></div>
         </div>
@@ -1671,7 +1876,6 @@
       else { $('.slot', box).appendChild(speakCheck(w.ko, { noWeak: true, onScore: flip, onSelf: flip })); }
       $('.v-flip', box).onclick = flip;
       $('.v-quit', box).onclick = () => { queue.length = 0; render(); };
-      const grade = (g) => { rateVocab(w.ko, g); queue.shift(); done++; if (g === 0) { queue.splice(Math.min(queue.length, 4), 0, w); total++; } render(); };
       $('.r0', box).onclick = () => grade(0); $('.r1', box).onclick = () => grade(1); $('.r2', box).onclick = () => grade(2);
     }
     render();
@@ -2289,9 +2493,10 @@
   }
   let lastQuery = '';
   function viewSearch() {
+    if (!VOCAB_FULL) loadFullVocab();
     if (!SEARCH_INDEX) SEARCH_INDEX = buildIndex();
-    const el = setView(`<h1 class="page-title">搜索 <small>${SEARCH_INDEX.length} 句</small></h1>
-      <div class="card"><label class="lbl" for="search-q">输入韩语或中文（例：거든요、点餐、医院、칭찬）</label>
+    const el = setView(`<h1 class="page-title">搜索 <small>${SEARCH_INDEX.length.toLocaleString()} 句 · ${VOCAB.length.toLocaleString()} 个单词</small></h1>
+      <div class="card"><label class="lbl" for="search-q">输入韩语、中文或汉字（例：거든요、点餐、医院、칭찬）</label>
         <input type="text" id="search-q" class="sq" autocomplete="off" placeholder="搜索……"></div>
       <div class="search-meta muted small"></div>
       <div class="search-res"></div>`);
@@ -2302,7 +2507,22 @@
       res.innerHTML = '';
       if (!q) { meta.textContent = ''; return; }
       const hits = SEARCH_INDEX.filter((x) => x.k.includes(q) || x.z.includes(q));
-      meta.textContent = `找到 ${hits.length} 句${hits.length > 100 ? '，显示前 100 句' : ''}`;
+      const words = vSearch(input.value.trim());
+      meta.textContent = `单词 ${words.length} 个 · 句子 ${hits.length} 句${hits.length > 100 ? '（显示前 100 句）' : ''}`;
+      if (words.length) {
+        const wb = h(`<section class="card s-words"><h3>单词 <small class="muted">${words.length} 个</small></h3><div class="s-wlist"></div>
+          ${words.length > 8 ? `<a class="s-src s-wall" href="javascript:void 0">在单词表里看全部 ${words.length} 个 ›</a>` : ''}</section>`);
+        words.slice(0, 8).forEach((w) => {
+          const st = vState(w);
+          const r = h(`<div class="s-word"><div class="s-wmain" role="button" tabindex="0"><b lang="ko">${esc(w.ko)}</b>${w.hj ? ` <span class="v-hj">${esc(w.hj)}</span>` : ''} <span class="v-badge ${st}">${VSTATE[st]}</span><div class="zh">${esc(w.zh)}</div></div><div class="pb-acts"></div></div>`);
+          $('.pb-acts', r).appendChild(speakBtn(w.ko, '▶'));
+          $('.s-wmain', r).onclick = () => { VOCAB_FOCUS = { q: w.ko, ko: w.ko }; location.hash = '#vocab'; };
+          $('.s-wlist', wb).appendChild(r);
+        });
+        const all = $('.s-wall', wb); if (all) all.onclick = () => { VOCAB_FOCUS = { q: input.value.trim() }; location.hash = '#vocab'; };
+        res.appendChild(wb);
+      }
+      if (hits.length) res.appendChild(h('<h3 class="sec-title">句子</h3>'));
       hits.slice(0, 100).forEach((x) => {
         const row = h(`<div class="pb-row card s-row"><div class="pb-main"><span class="ko" lang="ko">${esc(x.ko)}</span><span class="zh">${esc(x.zh)}</span><a class="s-src" href="${x.href}">${esc(x.src)} ›</a></div><div class="pb-acts"></div></div>`);
         $('.pb-acts', row).appendChild(speakBtn(x.ko, '▶'));
@@ -2525,6 +2745,16 @@
   /* ═════════════ 设置 ═════════════ */
   let DOWNLOADS = null;
   if (CLAUDE) CLAUDE.use('downloads').then((d) => { DOWNLOADS = d || null; }).catch(() => {});
+  /* 设置页：同步状态、数据大小、上次导出 */
+  function syncStatusHtml() {
+    const kb = Math.round((CLOUD.size || JSON.stringify(packState(S)).length) / 1024);
+    const t = (ms) => { const d = new Date(ms); return `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+    const lines = [];
+    if (ARTIFACT && CLOUD.ready) lines.push(CLOUD.err ? `<span class="bad-txt">⚠ 同步失败：${esc(CLOUD.err)}。进度还在这台设备上，请先导出备份。</span>` : CLOUD.lastOk ? `✅ 已同步（${t(CLOUD.lastOk)}）` : '正在同步……');
+    lines.push(`进度数据 ${kb} KB${kb > 700 ? ' <span class="bad-txt">（偏大，建议定期导出备份）</span>' : ''}`);
+    lines.push(S.settings.lastExport ? `上次导出备份：${esc(S.settings.lastExport)}` : '还没有导出过备份');
+    return lines.map((x) => `<div class="small">${x}</div>`).join('');
+  }
   function viewSettings() {
     loadVoices();
     const canExport = !ARTIFACT || !!DOWNLOADS;
@@ -2555,7 +2785,8 @@
         <select class="model" id="model-sel">${MODELS.map(([v, t]) => `<option value="${v}" ${v === S.settings.model ? 'selected' : ''}>${t}</option>`).join('')}</select>
       </section>`}
       <section class="card"><h2>进度</h2>
-        <p class="muted">${ARTIFACT ? (CLOUD.ready ? '✅ 进度已同步到你的 Claude 账户，换手机/电脑登录同一账户就能接着练。' : CLOUD.state === 'pending' ? '正在连接云端同步……' : '进度保存在这个浏览器里（登录 claude.ai 后打开可以同步到账户）。') : '进度只保存在这台设备的浏览器里。换设备前请导出。'}</p>
+        <p class="muted">${ARTIFACT ? (CLOUD.ready ? '进度同步到你的 Claude 账户，换手机/电脑登录同一账户就能接着练。' : CLOUD.state === 'pending' ? '正在连接云端同步……' : '进度保存在这个浏览器里（登录 claude.ai 后打开可以同步到账户）。') : '进度只保存在这台设备的浏览器里。换设备前请导出。'}</p>
+        <div class="sync-box">${syncStatusHtml()}</div>
         <div class="check-row">${canExport ? '<button class="btn export">导出进度</button>' : ''}<label class="btn ghost">导入进度<input type="file" accept=".json,application/json" class="import" id="import-file" hidden></label><button class="btn danger reset">重置全部进度</button></div>
       </section>`);
     $('.voice', el).onchange = (e) => { S.settings.voiceURI = e.target.value; save(); };
@@ -2574,21 +2805,22 @@
     }
     const exp = $('.export', el);
     if (exp) exp.onclick = async () => {
-      const data = JSON.stringify(Object.assign({}, S, { settings: Object.assign({}, S.settings, { apiKey: '' }) }), null, 2);
+      const data = JSON.stringify(packState(S));
       const filename = `korean-speaking-progress-${today()}.json`;
+      const done = () => { S.settings.lastExport = today(); save(); const sb = $('.sync-box', el); if (sb) sb.innerHTML = syncStatusHtml(); };
       if (ARTIFACT) {
-        try { const r = await DOWNLOADS.save({ filename, data }); if (r && r.status === 'saved') toast('已导出'); }
+        try { const r = await DOWNLOADS.save({ filename, data }); if (r && r.status === 'saved') { toast('已导出'); done(); } }
         catch (err) { if (!err || err.code !== 'declined') toast('导出失败'); }
         return;
       }
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
-      a.download = filename; a.click();
+      a.download = filename; a.click(); done();
     };
     $('.import', el).onchange = (e) => {
       const f = e.target.files[0]; if (!f) return;
       f.text().then((t) => {
-        try { const o = JSON.parse(t); const key = S.settings.apiKey; S = Object.assign(defaults(), o); S.settings = Object.assign(defaults().settings, o.settings || {}, { apiKey: key }); save(); toast('导入成功'); route(); }
+        try { const o = migrate(unpackState(JSON.parse(t))); const key = S.settings.apiKey; S = Object.assign(defaults(), o); S.settings = Object.assign(defaults().settings, o.settings || {}, { apiKey: key }); save(); toast('导入成功'); route(); }
         catch (err) { toast('文件格式不对'); }
       });
     };
@@ -2601,7 +2833,18 @@
   /* ═════════════ 启动 ═════════════ */
   window.addEventListener('hashchange', route);
   function boot() {
+    const mb = $('#tabbar .tb-more'); if (mb) mb.onclick = (e) => { e.preventDefault(); if ($('#more-sheet')) closeMore(); else openMore(); };
+    // 打字/键盘语音输入时把底部导航藏起来，不挡输入框
+    const isField = (t) => t && (t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && /^(text|search|number|)$/.test(t.type || '')));
+    document.addEventListener('focusin', (e) => { if (isField(e.target)) document.body.classList.add('kb-open'); });
+    document.addEventListener('focusout', () => setTimeout(() => { if (!isField(document.activeElement)) document.body.classList.remove('kb-open'); }, 80));
     route();
+    if (!VOCAB_FULL) {
+      // 首屏先出来，再在后台加载完整词库；直接打开单词/搜索页就马上加载
+      const nm = (location.hash.match(/^#\/?([a-z]+)/) || [])[1];
+      const go = () => loadFullVocab();
+      if (nm === 'vocab' || nm === 'search') go(); else setTimeout(go, 1200);
+    }
     const b = $('#banner');
     if (b && ARTIFACT) {
       b.innerHTML = '📱 网页版：说韩语时点输入框，用<b>键盘上的 🎤 语音输入</b>，说完自动打分。';
