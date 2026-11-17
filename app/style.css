@@ -395,3 +395,33 @@ details.model .toolbar { margin-top: 10px; }
 .model-list.no-zh .zh { display: none; }
 .model-list .pb-row.focus { background: var(--good-soft); border-radius: 8px; }
 .model-note { padding: 6px 2px; }
+/* 单词 */
+.vocab-today .v-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; text-align: center; margin-bottom: 10px; }
+.vocab-today .v-stats b { display: block; font-size: 1.4rem; }
+.vocab-today .v-stats span { font-size: .78rem; color: var(--muted); }
+.v-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 6px 0; }
+.v-row .chips { margin: 0; }
+.v-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.v-filters input { flex: 1 1 100%; }
+.v-filters select { flex: 1 1 30%; min-width: 0; }
+.v-item { display: flex; gap: 8px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.v-item:last-of-type { border-bottom: 0; }
+.v-main { flex: 1; min-width: 0; }
+.v-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.v-head b { font-size: 1.1rem; }
+.v-hj { color: var(--muted); font-size: .85rem; }
+.v-pos, .v-tag { font-size: .72rem; padding: 1px 6px; border-radius: 999px; background: var(--line); color: var(--muted); }
+.v-badge { font-size: .72rem; padding: 1px 6px; border-radius: 999px; }
+.v-badge.new { background: var(--line); color: var(--muted); }
+.v-badge.learning { background: var(--ok-soft); color: var(--ok); }
+.v-badge.fluent { background: var(--good-soft); color: var(--good); }
+.v-ex { margin-top: 4px; font-size: .9rem; }
+.v-ex small { display: block; color: var(--muted); }
+.v-count { margin-bottom: 4px; }
+.v-session { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 12px; }
+.v-front { font-size: 2rem; font-weight: 700; text-align: center; margin: 12px 0 6px; }
+.v-front.zh-front { font-size: 1.5rem; font-weight: 600; }
+.v-mean { font-size: 1.3rem; text-align: center; margin: 8px 0 4px; }
+.v-back-side .v-ex { background: var(--bg); border-radius: 10px; padding: 8px 10px; margin: 10px 0; }
+.v-unit-link { display: inline-block; margin: 0 0 8px; }
+.v-row select { width: auto; flex: 0 1 auto; padding-top: 6px; padding-bottom: 6px; }

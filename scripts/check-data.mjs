@@ -32,6 +32,10 @@ for (const [id, bm] of Object.entries(K.banmal || {})) { const u = K.units.find(
 for (const u of K.units) { const m = (K.models || {})[u.id]; if (!m) { err(u.id + ' 独白任务缺范文'); continue; } if (m.length < 5) err(u.id + ' 范文太短'); for (const x of m) if (!Array.isArray(x) || x.length !== 2 || !String(x[0]).trim() || !String(x[1]).trim()) err(u.id + ' 范文格式不对：' + x); }
 for (const id of Object.keys(K.models || {})) if (!K.units.some((u) => u.id === id)) err('范文对应的课不存在：' + id);
 for (const w of K.weeks) { const tm = (K.testModels || {})[w.week]; if (!tm || tm.length !== w.test.length) { err('第 ' + w.week + ' 周周测范文数量不对'); continue; } tm.forEach((m, i) => { if (!Array.isArray(m) || m.length < 3) err('第 ' + w.week + ' 周第 ' + (i + 1) + ' 题范文太短'); else for (const x of m) if (!Array.isArray(x) || x.length !== 2 || !String(x[0]).trim() || !String(x[1]).trim()) err('第 ' + w.week + ' 周第 ' + (i + 1) + ' 题范文格式不对'); }); }
+if ((K.vocabBook || []).length < 2500) err('TOPIK 词汇没加载或数量不对');
+for (const r of K.vocabBook || []) if (r.length !== 5 || !r[0] || !r[3] || ![1, 2, 3].includes(r[4])) err('TOPIK 词汇格式不对：' + r[0]);
+for (const r of K.vocabDaily || []) if (r.length < 3 || !r[0] || !r[1]) err('生活词汇格式不对：' + r[0]);
+if (!K.vocabIndex) err('缺少 vocab-index.js，请运行 node scripts/build-vocab.mjs');
 const sids = new Set();
 for (const s of K.scenes) {
   if (sids.has(s.id)) err('重复的情景 id ' + s.id); sids.add(s.id);
