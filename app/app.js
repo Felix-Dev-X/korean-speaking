@@ -908,7 +908,11 @@
           <div class="selfscore">${['流利度', '准确度', '自然度', '反应速度'].map((k, i) => `<label>${k} <input type="range" min="1" max="5" value="${(S.notes['score' + info.w] || [])[i] || 3}" data-i="${i}"><span>${(S.notes['score' + info.w] || [])[i] || 3}</span></label>`).join('')}</div>
         </section>${doneBtn}`);
       const box = $('.tests', el);
-      info.week.test.forEach((t, i) => { const r = recorder(`第 ${i + 1} 题：${t}`, { seconds: 90 }); box.appendChild(r); onLeave(r.cleanup); });
+      const tms = (K.testModels || {})[info.w] || [];
+      info.week.test.forEach((t, i) => {
+        const r = recorder(`第 ${i + 1} 题：${t}`, { seconds: 90 }); box.appendChild(r); onLeave(r.cleanup);
+        if (tms[i]) { const mb = modelBlock(tms[i], `第 ${info.w} 周周测 · 第 ${i + 1} 题范文`, `第 ${i + 1} 题范文`); box.appendChild(mb); onLeave(mb.stop); }
+      });
       const ta = $('.note', el);
       ta.oninput = () => { S.notes[info.w] = ta.value; save(); };
       $$('.selfscore input', el).forEach((r) => (r.oninput = () => {
@@ -1203,6 +1207,42 @@
   }
 
   /* ── ④ 独白任务 ── */
+  /* 范文块（独白任务、周测共用）：默认收起；整篇播放、逐句播放/跟读/收藏、隐藏中文。
+     只有（说明）没有韩语的行显示成灰色说明，不能播放。 */
+  function modelBlock(lines, src, title) {
+    const sec = h(`<details class="card model"><summary>📝 ${esc(title || '范文')}（建议先自己说一遍，再打开对照）</summary>
+      <div class="toolbar"><button class="btn play-model">▶ 听全文</button><button class="btn slow-model">🐢 慢速</button><button class="btn ghost stop-model">■ 停止</button>
+      <label class="switch"><input type="checkbox" class="hide-zh"> 隐藏中文</label></div>
+      <div class="pb-list model-list"></div>
+      <p class="muted small">听完把范文里你喜欢的 2–3 句换成自己的内容，再录一遍。（ ）里是说明，不用读。</p></details>`);
+    const list = $('.model-list', sec), rows = [], playable = [];
+    lines.forEach(([ko, zh]) => {
+      if (!ttsText(ko).trim()) { list.appendChild(h(`<div class="model-note muted small">${esc(zh || ko)}</div>`)); return; }
+      const row = h(`<div class="pb-row"><div class="pb-main"><span class="ko" lang="ko">${esc(ko)}</span><span class="zh">${esc(zh)}</span></div><div class="pb-acts"></div></div>`);
+      $('.pb-acts', row).appendChild(speakBtn(ko, '▶'));
+      const mic = h('<button class="btn icon" title="跟读打分">🎤</button>');
+      mic.onclick = () => { let chk = $('.check', row); if (!chk) { chk = speakCheck(ko, { zh, src }); row.appendChild(chk); } chk.start(); };
+      $('.pb-acts', row).appendChild(mic);
+      $('.pb-acts', row).appendChild(starBtn(ko, zh, src));
+      list.appendChild(row); rows.push(row); playable.push(ko);
+    });
+    let run = 0;
+    const playAll = async (rate) => {
+      const my = ++run;
+      for (let k = 0; k < playable.length; k++) {
+        if (my !== run) return;
+        rows.forEach((x) => x.classList.remove('focus')); rows[k].classList.add('focus');
+        await speak(playable[k], rate); await sleep(350);
+      }
+      rows.forEach((x) => x.classList.remove('focus'));
+    };
+    $('.play-model', sec).onclick = () => playAll(1);
+    $('.slow-model', sec).onclick = () => playAll(0.75);
+    $('.stop-model', sec).onclick = () => { run++; stopSpeak(); };
+    $('.hide-zh', sec).onchange = (e) => list.classList.toggle('no-zh', e.target.checked);
+    sec.stop = () => { run++; };
+    return sec;
+  }
   function tabMission(u, body) {
     body.appendChild(h(`<div class="tip card">按"开始录音"后一口气说完，<b>不许停顿超过 3 秒</b>。说完回听自己的录音，再用 AI 批改（或复制提示词到 Claude 网页/App 批改）。</div>`));
     const r = recorder(u.mission.prompt, { hints: u.mission.hints, seconds: u.mission.seconds });
@@ -1210,39 +1250,10 @@
     // 范文：先自己说一遍再看；可以整篇听、逐句播放和跟读
     const model = (K.models || {})[u.id];
     if (model) {
-      const sec = h(`<details class="card model"><summary>📝 范文（建议先自己说一遍，再打开对照）</summary>
-        <div class="toolbar"><button class="btn play-model">▶ 听全文</button><button class="btn slow-model">🐢 慢速</button><button class="btn ghost stop-model">■ 停止</button>
-        <label class="switch"><input type="checkbox" class="hide-zh"> 隐藏中文</label></div>
-        <div class="pb-list model-list"></div>
-        <p class="muted small">听完把范文里你喜欢的 2–3 句换成自己的内容，再录一遍。（ ）里是说明，不用读。</p></details>`);
-      const list = $('.model-list', sec), rows = [];
-      model.forEach(([ko, zh]) => {
-        const row = h(`<div class="pb-row"><div class="pb-main"><span class="ko" lang="ko">${esc(ko)}</span><span class="zh">${esc(zh)}</span></div><div class="pb-acts"></div></div>`);
-        $('.pb-acts', row).appendChild(speakBtn(ko, '▶'));
-        const mic = h('<button class="btn icon" title="跟读打分">🎤</button>');
-        mic.onclick = () => { let chk = $('.check', row); if (!chk) { chk = speakCheck(ko, { zh, src: u.title + ' · 范文' }); row.appendChild(chk); } chk.start(); };
-        $('.pb-acts', row).appendChild(mic);
-        $('.pb-acts', row).appendChild(starBtn(ko, zh, u.title + ' · 范文'));
-        list.appendChild(row); rows.push(row);
-      });
-      let run = 0;
-      const playAll = async (rate) => {
-        const my = ++run;
-        for (let k = 0; k < model.length; k++) {
-          if (my !== run) return;
-          rows.forEach((x) => x.classList.remove('focus')); rows[k].classList.add('focus');
-          await speak(model[k][0], rate); await sleep(350);
-        }
-        rows.forEach((x) => x.classList.remove('focus'));
-      };
-      $('.play-model', sec).onclick = () => playAll(1);
-      $('.slow-model', sec).onclick = () => playAll(0.75);
-      $('.stop-model', sec).onclick = () => { run++; stopSpeak(); };
-      $('.hide-zh', sec).onchange = (e) => list.classList.toggle('no-zh', e.target.checked);
-      body.appendChild(sec);
-      const stopModel = () => { run++; };
+      const mb = modelBlock(model, u.title + ' · 范文');
+      body.appendChild(mb);
       const rc = r.cleanup;
-      r.cleanup = () => { stopModel(); if (rc) rc(); };
+      r.cleanup = () => { mb.stop(); if (rc) rc(); };
     }
     body.appendChild(h(`<div class="card"><h3>自查清单</h3><ul class="checklist">
       <li>有没有超过 3 秒的沉默？</li><li>本课的句型/句块至少用了 3 个吗？</li>
@@ -1985,6 +1996,7 @@
       { const bmd = banmalDialogue(u); if (bmd) bmd.lines.forEach((l) => add(l[1], l[2], tag + ' · 对话半语版', '#unit-' + u.id)); }
       u.drill.items.forEach((d) => add(d[1], d[0], tag + ' · 快反', '#unit-' + u.id));
     });
+    Object.entries(K.testModels || {}).forEach(([w, ms]) => ms.forEach((m, i) => m.forEach((l) => add(l[0], l[1], `第 ${w} 周周测 · 第 ${i + 1} 题范文`, '#day-' + (w * 7)))));
     SCENES.forEach((sc) => sc.lines.forEach((l) => add(l[1], l[2], '情景 · ' + sc.title, '#scene-' + sc.id)));
     (K.phrasebank || []).forEach((c, ci) => c.items.forEach((it) => add(it[0], it[1] + (it[2] ? '（' + it[2] + '）' : ''), '句库 · ' + c.cat, '#phrases')));
     PASSAGES.forEach((p) => p.sentences.forEach((x) => add(x[0], x[1], '短文 · ' + p.title, '#shadow-' + p.id)));

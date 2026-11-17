@@ -44,6 +44,8 @@ for (const w of K.weeks) {
   }
   md += `---\n\n## 第 ${base + 6} 天：现实任务（必须在真实世界完成）\n\n${w.realMissions.map((m) => `- [ ] ${m}`).join('\n')}\n\n`;
   md += `## 第 ${base + 7} 天：周测（每题录音，不看提示）\n\n${w.test.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\n`;
+  const tms = (K.testModels || {})[w.week] || [];
+  tms.forEach((m, i) => { md += `<details><summary>第 ${i + 1} 题范文（先自己说一遍再看）</summary>\n\n` + m.map(([ko, zh]) => `> ${ko}  \n> <sub>${zh}</sub>`).join('\n>\n') + `\n\n</details>\n\n`; });
   md += `自评（各 1–5 分）：流利度 ___　准确度 ___　自然度 ___　反应速度 ___\n\n`;
   md += `**本周复盘**：写下这周最常卡壳的 3 句、最想记住的 3 个表达、下周要改的 1 个坏习惯。\n`;
   fs.writeFileSync(path.join(out, `week-${w.week}.md`), md);
