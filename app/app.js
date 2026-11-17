@@ -1510,9 +1510,9 @@
       <h2 class="sec-title">总表</h2>
       <div class="v-filters">
         <input type="search" class="v-q" placeholder="搜韩语、中文或汉字">
-        <select class="v-f">${[['all', '全部'], ['life', '生活常用'], ['book', 'TOPIK 书']].map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select>
-        <select class="v-sf"><option value="">全部状态</option><option value="new">未学</option><option value="learning">学习中</option><option value="fluent">熟练</option></select>
-        <select class="v-u"><option value="">按课程…</option>${UNITS.map((u) => `<option value="${u.id}" ${u.id === uid ? 'selected' : ''}>第 ${lessonNo(u)} 课 ${esc(u.title)}</option>`).join('')}</select>
+        <select class="v-f" aria-label="类别">${[['all', '全部'], ['life', '生活常用'], ['book', 'TOPIK 书']].map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select>
+        <select class="v-sf" aria-label="学习状态"><option value="">全部状态</option><option value="new">未学</option><option value="learning">学习中</option><option value="fluent">熟练</option></select>
+        <select class="v-3" aria-label="等级或课程"></select>
       </div>
       <div class="chips v-index">${['全部', 'ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'].map((c, i) => `<a class="chip ${i ? '' : 'on'}" href="javascript:void 0" data-c="${i ? c : ''}">${c}</a>`).join('')}</div>
       <div class="v-bar"><span class="v-count muted small"></span><button class="btn small v-learn-list">▶ 背这个列表</button></div>
@@ -1545,7 +1545,13 @@
     const exb = $('.v-extra', el); if (exb) exb.onclick = () => run(newPool.slice(0, 20), morePool);
 
     // ── 总表：滚动到底自动加载，不用一页页点 ──
-    const list = $('.v-list', el), q = $('.v-q', el), f = $('.v-f', el), sf = $('.v-sf', el), us = $('.v-u', el);
+    const list = $('.v-list', el), q = $('.v-q', el), f = $('.v-f', el), sf = $('.v-sf', el), v3 = $('.v-3', el);
+    // 第三个筛选跟着类别变：「生活常用」→ 按课程；「全部 / TOPIK 书」→ 初级 / 中级 / 高级
+    const fill3 = () => {
+      v3.innerHTML = f.value === 'life'
+        ? '<option value="">全部课程</option>' + UNITS.map((u) => `<option value="${u.id}">第 ${lessonNo(u)} 课 ${esc(u.title)}</option>`).join('')
+        : '<option value="">全部等级</option><option value="1">初级</option><option value="2">中级</option><option value="3">高级</option>';
+    };
     let init = '', rows = [], shown = 0, io = null;
     const sentinel = h('<div class="v-sentinel"></div>');
     const rowEl = (w) => {
@@ -1596,8 +1602,9 @@
       if (shown >= rows.length && io) io.unobserve(sentinel);
     };
     const render = () => {
-      const qq = q.value.trim(), ff = f.value, ss = sf.value, uu = us.value;
-      rows = VOCAB.filter((w) => (!uu || w.units.includes(uu)) && inScope(w, ff) && (!ss || vState(w) === ss) && (!init || vInit(w) === init)
+      const qq = q.value.trim(), ff = f.value, ss = sf.value;
+      const uu = ff === 'life' ? v3.value : '', lvf = ff === 'life' ? '' : v3.value;
+      rows = VOCAB.filter((w) => (!uu || w.units.includes(uu)) && (!lvf || String(w.lv) === lvf) && inScope(w, ff) && (!ss || vState(w) === ss) && (!init || vInit(w) === init)
         && (!qq || w.ko.includes(qq) || w.zh.includes(qq) || (w.hj && w.hj.includes(qq))));
       if (uu) rows.sort((a, b) => a.lv - b.lv);
       $('.v-count', el).textContent = rows.length.toLocaleString() + ' 个';
@@ -1616,9 +1623,11 @@
     $$('.v-index .chip', el).forEach((c) => (c.onclick = () => { init = c.dataset.c; $$('.v-index .chip', el).forEach((x) => x.classList.toggle('on', x === c)); render(); }));
     let tmr = null;
     q.oninput = () => { clearTimeout(tmr); tmr = setTimeout(render, 200); };
-    f.onchange = sf.onchange = render;
-    us.onchange = () => { location.hash = us.value ? '#vocab-' + us.value : '#vocab'; };
-    if (uid) f.value = 'all';
+    f.onchange = () => { fill3(); render(); };
+    sf.onchange = v3.onchange = render;
+    if (uid) f.value = 'life';
+    fill3();
+    if (uid) v3.value = uid;
     render();
     if (!io) { while (shown < rows.length) loadMore(); }
   }
