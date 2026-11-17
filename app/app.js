@@ -1430,108 +1430,177 @@
     S.vocab[ko] = c; save();
   }
   const vDue = () => VOCAB.filter((w) => S.vocab[w.ko] && S.vocab[w.ko].due <= today());
-  const vNewLeft = () => Math.max(0, (S.settings.vocabDaily || 20) - (S.vocabNew[today()] || 0));
+  // 每天新词：settings.vocabDaily，0 = 不限
+  const vDailyLimit = () => (S.settings.vocabDaily == null ? 20 : +S.settings.vocabDaily);
+  const vNewToday = () => S.vocabNew[today()] || 0;
+  const vNewLeft = () => { const lim = vDailyLimit(); return lim <= 0 ? Infinity : Math.max(0, lim - vNewToday()); };
   function vNewPool(sc, uid) {
     const pool = VOCAB.filter((w) => !S.vocab[w.ko] && (uid ? w.units.includes(uid) : inScope(w, sc)));
     return pool.sort((a, b) => a.first - b.first || a.lv - b.lv);
   }
   const vocabTodayCount = () => vDue().length + Math.min(vNewLeft(), vNewPool(S.settings.vocabScope || 'course').length);
+  // 词首辅音（ㄲ 归 ㄱ……），用来做索引
+  const V_INIT = ['ㄱ', 'ㄱ', 'ㄴ', 'ㄷ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅂ', 'ㅅ', 'ㅅ', 'ㅇ', 'ㅈ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+  const vInit = (w) => { const c = w.ko.charCodeAt(0) - 0xac00; return c >= 0 && c < 11172 ? V_INIT[Math.floor(c / 588)] : '#'; };
+  const vNext = (ko) => { const v = S.vocab[ko]; return !v ? '' : v.due <= today() ? '今天复习' : '下次复习 ' + fmtDue(v.due); };
 
   function viewVocab(arg) {
     const uid = arg && /^u\d+$/.test(arg) ? arg : null;
     const unit = uid ? unitById(uid) : null;
     const sc = S.settings.vocabScope || 'course';
     const dir = S.settings.vocabDir || 'ko';
+    const lim = vDailyLimit();
     const learned = Object.keys(S.vocab).length, fluent = VOCAB.filter((w) => vState(w) === 'fluent').length;
-    const due = vDue(), newLeft = vNewLeft();
+    const due = uid ? vDue().filter((w) => w.units.includes(uid)) : vDue();
     const newPool = vNewPool(sc, uid);
+    const newCount = uid ? newPool.length : Math.min(vNewLeft(), newPool.length);
     const unitWords = uid ? VOCAB.filter((w) => w.units.includes(uid)) : null;
     const el = setView(`<h1 class="page-title">${unit ? `第 ${lessonNo(unit)} 课的单词` : '单词'} <small>${unit ? esc(unit.title) + ' · ' + unitWords.length + ' 个' : '共 ' + VOCAB.length + ' 个'}</small></h1>
-      <div class="tip card">TOPIK 初中高级必备单词 + 课程对话里的生活词汇。每个词尽量配一句<b>本课程里真实出现过的例句</b>（点出处可以跳回那一课/那段对话）。背法：看到词先<b>出声读</b>，想意思，再翻面；按「不认识 / 模糊 / 认识」安排下次复习。</div>
+      <div class="tip card">TOPIK 初中高级必备单词 + 课程对话里的生活词汇，大部分常用词配了<b>本课程里真实出现过的例句</b>。可以按每天的计划背，也可以在下面的总表里<b>点任何一个词直接学</b>，都会算进学习记录。</div>
       <section class="card vocab-today">
-        <div class="v-stats"><div><b>${due.length}</b><span>待复习</span></div><div><b>${uid ? newPool.length : Math.min(newLeft, newPool.length)}</b><span>${uid ? '本课新词' : '今天新词'}</span></div><div><b>${learned}</b><span>已学</span></div><div><b>${fluent}</b><span>熟练</span></div></div>
-        ${uid ? '' : `<div class="v-row"><span class="muted small">新词从哪里来：</span><div class="chips">${VSCOPES.map(([k, t]) => `<a class="chip ${sc === k ? 'on' : ''}" href="javascript:void 0" data-sc="${k}">${t}</a>`).join('')}</div></div>
-        <div class="v-row"><label class="muted small" for="v-daily">每天新词</label><select id="v-daily" class="v-daily">${[10, 20, 30, 50].map((n) => `<option ${(S.settings.vocabDaily || 20) === n ? 'selected' : ''}>${n}</option>`).join('')}</select>
-          <label class="muted small" for="v-dir">方向</label><select id="v-dir" class="v-dir"><option value="ko" ${dir === 'ko' ? 'selected' : ''}>看韩语 → 想中文</option><option value="zh" ${dir === 'zh' ? 'selected' : ''}>看中文 → 说韩语</option></select></div>`}
-        <div class="check-row"><button class="btn primary big v-start">▶ 开始背（${uid ? due.filter((w) => w.units.includes(uid)).length + newPool.length : due.length + Math.min(newLeft, newPool.length)} 个）</button>${unit ? `<a class="btn ghost" href="#vocab">全部单词</a><a class="btn ghost" href="#unit-${uid}">回到这课</a>` : ''}</div>
+        <div class="v-stats"><div><b>${due.length}</b><span>待复习</span></div><div><b>${newCount}</b><span>${uid ? '本课新词' : lim <= 0 ? '新词（不限）' : '今天还剩新词'}</span></div><div><b>${vNewToday()}</b><span>今天已学新词</span></div><div><b>${learned}</b><span>已学</span></div><div><b>${fluent}</b><span>熟练</span></div></div>
+        ${uid ? '' : `<div class="v-row"><span class="muted small">新词从哪里来</span><div class="chips">${VSCOPES.map(([k, t]) => `<a class="chip ${sc === k ? 'on' : ''}" href="javascript:void 0" data-sc="${k}">${t}</a>`).join('')}</div></div>
+        <div class="v-row"><span class="muted small">每天新词</span>
+          <input type="number" class="v-daily" min="0" max="9999" step="5" value="${lim > 0 ? lim : ''}" placeholder="不限" inputmode="numeric">
+          <div class="chips">${[10, 20, 50, 100, 200].map((n) => `<a class="chip ${lim === n ? 'on' : ''}" href="javascript:void 0" data-n="${n}">${n}</a>`).join('')}<a class="chip ${lim <= 0 ? 'on' : ''}" href="javascript:void 0" data-n="0">不限</a></div></div>
+        <div class="v-row"><span class="muted small">方向</span><select class="v-dir"><option value="ko" ${dir === 'ko' ? 'selected' : ''}>看韩语 → 想中文</option><option value="zh" ${dir === 'zh' ? 'selected' : ''}>看中文 → 说韩语</option></select></div>`}
+        <div class="check-row"><button class="btn primary big v-start">▶ 开始背（${due.length + newCount} 个）</button>
+          ${!uid && newCount === 0 && newPool.length ? '<button class="btn v-extra">今天的新词背完了，再背 20 个</button>' : ''}
+          ${unit ? `<a class="btn ghost" href="#vocab">全部单词</a><a class="btn ghost" href="#unit-${uid}">回到这课</a>` : ''}</div>
         <div class="v-session hidden"></div>
       </section>
-      <h2 class="sec-title">词表</h2>
+      <h2 class="sec-title">总表</h2>
       <div class="v-filters">
         <input type="search" class="v-q" placeholder="搜韩语、中文或汉字">
         <select class="v-f"><option value="all">全部</option>${VSCOPES.filter(([k]) => k !== 'all').map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select>
-        <select class="v-st"><option value="">全部状态</option><option value="new">未学</option><option value="learning">学习中</option><option value="fluent">熟练</option></select>
+        <select class="v-sf"><option value="">全部状态</option><option value="new">未学</option><option value="learning">学习中</option><option value="fluent">熟练</option></select>
         <select class="v-u"><option value="">按课程…</option>${UNITS.map((u) => `<option value="${u.id}" ${u.id === uid ? 'selected' : ''}>第 ${lessonNo(u)} 课 ${esc(u.title)}</option>`).join('')}</select>
       </div>
+      <div class="chips v-index">${['全部', 'ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'].map((c, i) => `<a class="chip ${i ? '' : 'on'}" href="javascript:void 0" data-c="${i ? c : ''}">${c}</a>`).join('')}</div>
+      <div class="v-bar"><span class="v-count muted small"></span><button class="btn small v-learn-list">▶ 背这个列表</button></div>
       <div class="v-list card"></div>
-      <p class="muted small">TOPIK 词汇来自《完全掌握·新韩国语能力考试 TOPIK 必备单词》（金龙一著，华东理工大学出版社）正序版词汇表，仅供个人学习使用。</p>`);
+      <p class="muted small">点任何一个词可以展开：看例句、直接标「不认识 / 模糊 / 认识」（算进学习记录），或者从这个词开始往下背。<br>TOPIK 词汇来自《完全掌握·新韩国语能力考试 TOPIK 必备单词》（金龙一著，华东理工大学出版社）正序版词汇表，仅供个人学习使用。</p>`);
 
-    // 设置
+    // ── 设置 ──
     $$('.vocab-today .chip[data-sc]', el).forEach((c) => (c.onclick = () => { S.settings.vocabScope = c.dataset.sc; save(); viewVocab(arg); }));
-    const vd = $('.v-daily', el); if (vd) vd.onchange = () => { S.settings.vocabDaily = +vd.value; save(); viewVocab(arg); };
+    const setDaily = (n) => { S.settings.vocabDaily = Math.max(0, Math.floor(+n || 0)); save(); viewVocab(arg); };
+    $$('.vocab-today .chip[data-n]', el).forEach((c) => (c.onclick = () => setDaily(c.dataset.n)));
+    const vd = $('.v-daily', el); if (vd) vd.onchange = () => setDaily(vd.value === '' ? 0 : vd.value);
     const vr = $('.v-dir', el); if (vr) vr.onchange = () => { S.settings.vocabDir = vr.value; save(); };
 
-    // 背词
+    // ── 背词 ──
     const box = $('.v-session', el);
-    $('.v-start', el).onclick = () => {
-      const dueQ = shuffle(uid ? due.filter((w) => w.units.includes(uid)) : due);
-      const newQ = uid ? newPool : newPool.slice(0, newLeft);
-      const queue = dueQ.concat(newQ);
-      if (!queue.length) { toast(uid ? '这一课的单词都背过了，到期了会再出现' : '今天没有要背的了 🎉 可以把「每天新词」调多一点'); return; }
+    const run = (queue, extraFrom) => {
+      if (!queue.length) { toast('没有要背的词了 🎉'); return; }
       box.classList.remove('hidden'); $('.v-start', el).classList.add('hidden');
+      const ex = $('.v-extra', el); if (ex) ex.classList.add('hidden');
       box.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      vSession(box, queue, () => viewVocab(arg));
+      vSession(box, queue, () => viewVocab(arg), extraFrom);
     };
+    const morePool = () => vNewPool(sc, uid);
+    $('.v-start', el).onclick = () => {
+      const q = shuffle(due).concat(uid ? newPool : newPool.slice(0, newCount));
+      if (!q.length) { toast(uid ? '这一课的单词都背过了，到期了会再出现' : '今天的已经背完了 🎉'); return; }
+      run(q, uid ? null : morePool);
+    };
+    const exb = $('.v-extra', el); if (exb) exb.onclick = () => run(newPool.slice(0, 20), morePool);
 
-    // 词表
-    const list = $('.v-list', el), q = $('.v-q', el), f = $('.v-f', el), st = $('.v-st', el), us = $('.v-u', el);
-    if (uid) f.value = 'all';
-    let shown = 0, rows = [];
-    const row = (w) => {
-      const s = vState(w);
-      const r = h(`<div class="v-item"><div class="v-main"><div class="v-head"><b lang="ko">${esc(w.ko)}</b>${w.hj ? `<span class="v-hj">${esc(w.hj)}</span>` : ''}${w.pos ? `<span class="v-pos">${esc(w.pos)}</span>` : ''}<span class="v-tag">${esc(w.cat)}</span><span class="v-badge ${s}">${VSTATE[s]}</span></div>
-        <div class="zh">${esc(w.zh)}</div>
-        ${w.ex ? `<div class="v-ex"><span lang="ko">${esc(w.ex)}</span><small>${esc(w.exZh)} · <a href="${esc(w.exLink)}">${esc(w.exSrc)}</a></small></div>` : ''}</div><div class="pb-acts"></div></div>`);
+    // ── 总表：滚动到底自动加载，不用一页页点 ──
+    const list = $('.v-list', el), q = $('.v-q', el), f = $('.v-f', el), sf = $('.v-sf', el), us = $('.v-u', el);
+    let init = '', rows = [], shown = 0, io = null;
+    const sentinel = h('<div class="v-sentinel"></div>');
+    const rowEl = (w) => {
+      const st = vState(w);
+      const r = h(`<div class="v-item" data-ko="${esc(w.ko)}"><div class="v-line"><div class="v-main" role="button" tabindex="0">
+          <div class="v-head"><b lang="ko">${esc(w.ko)}</b>${w.hj ? `<span class="v-hj">${esc(w.hj)}</span>` : ''}${w.pos ? `<span class="v-pos">${esc(w.pos)}</span>` : ''}<span class="v-badge ${st}">${VSTATE[st]}</span></div>
+          <div class="zh">${esc(w.zh)}</div></div><div class="pb-acts"></div></div></div>`);
       $('.pb-acts', r).appendChild(speakBtn(w.ko, '▶'));
-      if (w.ex) { const b = speakBtn(w.ex, '例'); b.title = '播放例句'; $('.pb-acts', r).appendChild(b); }
+      $('.v-main', r).onclick = () => toggleDetail(r, w);
       return r;
     };
+    function toggleDetail(r, w) {
+      const old = $('.v-detail', r);
+      if (old) { old.remove(); r.classList.remove('open'); return; }
+      r.classList.add('open');
+      const d = h(`<div class="v-detail">
+        <div class="muted small">${[w.cat, w.hj, w.pos].filter(Boolean).map(esc).join(' · ')}${w.units.length ? ` · 出现在 ${w.units.length} 课` : ''}</div>
+        ${w.ex ? `<div class="v-ex"><span lang="ko">${esc(w.ex)}</span><small>${esc(w.exZh)} · <a href="${esc(w.exLink)}">${esc(w.exSrc)}</a></small></div>` : '<div class="muted small">课程里还没有用到这个词的例句。</div>'}
+        <div class="check-row v-acts"></div>
+        <div class="check-row rate"><button class="btn small r0">😵 不认识</button><button class="btn small r1">🤔 模糊</button><button class="btn small r2">✅ 认识</button></div>
+        <div class="muted small v-nextinfo">${esc(vNext(w.ko))}</div>
+        <div class="check-row"><button class="btn small ghost v-from">▶ 从这个词开始往下背</button></div></div>`);
+      if (w.ex) $('.v-acts', d).appendChild(speakBtn(w.ex, '▶ 例句'));
+      $('.v-acts', d).appendChild(starBtn(w.ex || w.ko, w.ex ? w.exZh : w.zh, '单词 · ' + w.ko));
+      const rate = (g) => {
+        rateVocab(w.ko, g);
+        const st = vState(w), b = $('.v-badge', r);
+        b.className = 'v-badge ' + st; b.textContent = VSTATE[st];
+        $('.v-nextinfo', d).textContent = '已记录 · ' + vNext(w.ko);
+        refreshStats();
+      };
+      $('.r0', d).onclick = () => rate(0); $('.r1', d).onclick = () => rate(1); $('.r2', d).onclick = () => rate(2);
+      $('.v-from', d).onclick = () => { const i = rows.indexOf(w); run(rows.slice(i < 0 ? 0 : i)); };
+      r.appendChild(d);
+      speak(w.ko);
+    }
+    const refreshStats = () => {
+      const b = $$('.v-stats b', el);
+      if (b.length === 5) { b[0].textContent = (uid ? vDue().filter((w) => w.units.includes(uid)) : vDue()).length; b[2].textContent = vNewToday(); b[3].textContent = Object.keys(S.vocab).length; b[4].textContent = VOCAB.filter((w) => vState(w) === 'fluent').length; }
+    };
+    const loadMore = () => {
+      const frag = document.createDocumentFragment();
+      rows.slice(shown, shown + 150).forEach((w) => frag.appendChild(rowEl(w)));
+      shown += 150;
+      list.insertBefore(frag, sentinel);
+      if (shown >= rows.length && io) io.unobserve(sentinel);
+    };
     const render = () => {
-      const qq = q.value.trim(), ff = f.value, ss = st.value, uu = us.value;
-      rows = VOCAB.filter((w) => (!uu || w.units.includes(uu)) && inScope(w, ff) && (!ss || vState(w) === ss)
+      const qq = q.value.trim(), ff = f.value, ss = sf.value, uu = us.value;
+      rows = VOCAB.filter((w) => (!uu || w.units.includes(uu)) && inScope(w, ff) && (!ss || vState(w) === ss) && (!init || vInit(w) === init)
         && (!qq || w.ko.includes(qq) || w.zh.includes(qq) || (w.hj && w.hj.includes(qq))));
       if (uu) rows.sort((a, b) => a.lv - b.lv);
-      list.innerHTML = rows.length ? `<div class="muted small v-count">${rows.length} 个</div>` : '<div class="muted">没有找到。</div>';
-      shown = 0; more();
+      $('.v-count', el).textContent = rows.length + ' 个';
+      $('.v-learn-list', el).textContent = `▶ 背这个列表（${rows.length} 个）`;
+      $('.v-learn-list', el).disabled = !rows.length;
+      list.innerHTML = rows.length ? '' : '<div class="muted">没有找到。</div>';
+      list.appendChild(sentinel);
+      shown = 0; loadMore();
+      if (io) { io.unobserve(sentinel); if (shown < rows.length) io.observe(sentinel); }
     };
-    const more = () => {
-      const old = $('.v-more', list); if (old) old.remove();
-      rows.slice(shown, shown + 80).forEach((w) => list.appendChild(row(w)));
-      shown += 80;
-      if (shown < rows.length) { const m = h(`<button class="btn ghost v-more">再显示 ${Math.min(80, rows.length - shown)} 个（共 ${rows.length}）</button>`); m.onclick = more; list.appendChild(m); }
-    };
+    if ('IntersectionObserver' in window) {
+      io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting) && shown < rows.length) loadMore(); }, { rootMargin: '800px 0px' });
+      onLeave(() => io.disconnect());
+    }
+    $('.v-learn-list', el).onclick = () => run(rows.slice());
+    $$('.v-index .chip', el).forEach((c) => (c.onclick = () => { init = c.dataset.c; $$('.v-index .chip', el).forEach((x) => x.classList.toggle('on', x === c)); render(); }));
     let tmr = null;
     q.oninput = () => { clearTimeout(tmr); tmr = setTimeout(render, 200); };
-    f.onchange = st.onchange = render;
-    us.onchange = () => { if (us.value) location.hash = '#vocab-' + us.value; else location.hash = '#vocab'; };
+    f.onchange = sf.onchange = render;
+    us.onchange = () => { location.hash = us.value ? '#vocab-' + us.value : '#vocab'; };
+    if (uid) f.value = 'all';
     render();
+    if (!io) { while (shown < rows.length) loadMore(); }
   }
 
-  /* 背词卡片：看韩语想中文（或看中文说韩语）→ 翻面 → 不认识 / 模糊 / 认识 */
-  function vSession(box, queue, onEnd) {
+  /* 背词卡片：看韩语想中文（或看中文说韩语）→ 翻面 → 不认识 / 模糊 / 认识。
+     morePool：背完后可以"再背 20 个新词"（不受每天上限限制） */
+  function vSession(box, queue, onEnd, morePool) {
     const dir = S.settings.vocabDir || 'ko';
-    let done = 0;
-    const total = queue.length;
+    let done = 0, total = queue.length;
     function render() {
       stopListen();
       if (!queue.length) {
-        box.innerHTML = `<h3>🎉 背完了 ${done} 个！</h3><p class="muted">「不认识」的词明天还会出现。</p><button class="btn v-back">回到单词页</button>`;
+        const more = morePool ? morePool() : [];
+        box.innerHTML = `<h3>🎉 背完了 ${done} 个！</h3><p class="muted">「不认识」的词明天还会出现。</p>
+          <div class="check-row">${more.length ? `<button class="btn primary v-more20">再背 20 个新词</button><button class="btn v-more50">再背 50 个</button>` : ''}<button class="btn ghost v-back">回到单词页</button></div>`;
         $('.v-back', box).onclick = onEnd;
+        const go = (n) => { queue.push(...more.slice(0, n)); total += Math.min(n, more.length); render(); };
+        if (more.length) { $('.v-more20', box).onclick = () => go(20); $('.v-more50', box).onclick = () => go(50); }
         return;
       }
       const w = queue[0];
       const isNew = !S.vocab[w.ko];
-      box.innerHTML = `<div class="prog">剩余 ${queue.length} / ${total}${isNew ? ' · 新词' : ' · 复习'} · ${esc(w.cat)}</div>
+      box.innerHTML = `<div class="prog">${done + 1} / ${total}${isNew ? ' · 新词' : ' · 复习'} · ${esc(w.cat)}<button class="btn small ghost v-quit">结束</button></div>
         ${dir === 'ko' ? `<div class="v-front" lang="ko">${esc(w.ko)}</div>` : `<div class="v-front zh-front">${esc(w.zh)}</div>${w.pos ? `<div class="muted small center-row">${esc(w.pos)}</div>` : ''}`}
         <div class="slot"></div>
         <div class="v-back-side hidden">
@@ -1550,7 +1619,8 @@
       if (dir === 'ko') { setTimeout(() => speak(w.ko), 150); }
       else { $('.slot', box).appendChild(speakCheck(w.ko, { noWeak: true, onScore: flip, onSelf: flip })); }
       $('.v-flip', box).onclick = flip;
-      const grade = (g) => { rateVocab(w.ko, g); queue.shift(); done++; if (g === 0) queue.splice(Math.min(queue.length, 4), 0, w); render(); };
+      $('.v-quit', box).onclick = () => { queue.length = 0; render(); };
+      const grade = (g) => { rateVocab(w.ko, g); queue.shift(); done++; if (g === 0) { queue.splice(Math.min(queue.length, 4), 0, w); total++; } render(); };
       $('.r0', box).onclick = () => grade(0); $('.r1', box).onclick = () => grade(1); $('.r2', box).onclick = () => grade(2);
     }
     render();
