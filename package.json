@@ -1,0 +1,16 @@
+{
+  "name": "korean-speaking",
+  "private": true,
+  "description": "韩语口语特训（纯前端网页 App）。这里只有测试和打包用的开发依赖，网页本身不需要构建。",
+  "type": "module",
+  "scripts": {
+    "check": "node scripts/check-data.mjs",
+    "build": "node scripts/stamp-assets.mjs && node scripts/build-artifact.mjs",
+    "test": "node tests/run.mjs",
+    "test:fast": "FAST=1 node tests/run.mjs",
+    "live": "node scripts/check-live.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

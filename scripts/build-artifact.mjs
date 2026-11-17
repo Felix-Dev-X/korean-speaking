@@ -16,6 +16,8 @@ const safeJs = (js) => js.replace(/<\/script/gi, '<\\/script');
 const html = read('index.html');
 const body = html.slice(html.indexOf('<header'), html.indexOf('</footer>') + '</footer>'.length)
   .replace('进度保存在本机浏览器', '登录后进度自动同步到你的账户');
+// 版本号：stamp-assets.mjs 写在 index.html 里的整体版本 + 打包日期
+const version = ((html.match(/<meta name="app-version" content="([^"]*)">/) || [])[1] || 'dev') + ' · ' + new Date().toISOString().slice(0, 10);
 const desc = (html.match(/<meta name="description" content="([^"]*)">/) || [])[1] || '';
 
 const parts = [
@@ -24,7 +26,8 @@ const parts = [
   `<meta name="description" content="${desc}">`,
   `<style>\n${read('style.css')}\n</style>`,
   body,
-  "<script>window.KSS_ENV = 'artifact';</script>",
+  `<script>window.KSS_ENV = 'artifact'; window.KSS_VERSION = ${JSON.stringify(version)};</script>`,
+  `<script>\n${safeJs(read('errors.js'))}\n</script>`,
   ...FILES.map((f) => `<script>\n${safeJs(read('data/' + f + '.js'))}\n</script>`),
   `<script>\n${safeJs(read('app.js'))}\n</script>`,
 ];

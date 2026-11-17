@@ -73,9 +73,13 @@
 **<https://felix-dev-x.github.io/korean-speaking/>**
 
 - 手机建议用 **Chrome（Android）** 或 **Safari（iPhone）** 打开，然后"添加到主屏幕"，以后像 App 一样一点就开
+  - iPhone 上尤其建议：Safari 里一个网站 7 天没打开，它存在本机的数据可能被系统清掉，从主屏幕打开的不会
+  - 主屏幕 App 和 Safari 的数据是分开的：添加前先在 Safari 里「设置 → 导出进度」，再在主屏幕 App 里导入
+- 打开过一次以后，**没网也能用**（课程、单词都缓存在手机上）
 - 第一次点 🎤 时允许使用麦克风，就能开口自动识别打分、录音回放
 - 手机上用底部导航（今天 · 课程 · 练习 · 单词 · 复习 · 更多）；电脑上用顶部导航
-- 学习进度保存在这台设备的浏览器里，换设备前在「设置」里导出
+- 学习进度保存在这台设备的浏览器里，换设备前在「设置」里导出；超过 7 天没备份，首页会提醒
+- 导入进度时可以选「合并」（两边学过的都保留）或「替换」，导入前的进度会自动保存一份，能恢复
 - AI 陪练：在「设置」里填自己的 Anthropic API Key；或者在「AI 陪练」页点"复制提示词"，粘贴到 Claude App 的语音模式里直接聊（不需要 Key）
 
 > 作者本人另有一个发布在 claude.ai 的网页版（用 Claude 账户直接陪练、进度同步到账户），用 `node scripts/build-artifact.mjs` 打包。
@@ -223,7 +227,10 @@ korean-speaking/
 ├── app/                       ← 练习 App（纯前端，无需安装）
 │   ├── index.html
 │   ├── style.css
-│   ├── app.js                 ← 跟读/打分/角色扮演/快反/录音/复习/AI 陪练
+│   ├── app.js                 ← 跟读/打分/角色扮演/快反/录音/复习/背单词/AI 陪练
+│   ├── errors.js              ← 出错提示（不白屏，能复制错误信息）
+│   ├── sw-template.js → sw.js ← 离线缓存（sw.js 自动生成）
+│   ├── manifest.webmanifest, icon-*.png ← 添加到主屏幕用
 │   └── data/                  ← 全部课程内容（修改这里即可扩充课程）
 │       ├── week1-2.js … week19-20.js ← 20 周的第 1–4 课
 │       ├── units-extra-1.js, -2.js   ← 每周第 5 课
@@ -235,21 +242,40 @@ korean-speaking/
 │       ├── replies.js, listening*.js ← 接话选择、听力理解
 │       ├── spoken.js                 ← 真实口语
 │       ├── pronunciation*.js         ← 发音规则
+│       ├── vocab-*.js                ← 单词（TOPIK 书、基础词典、生活词汇、例句索引）
 │       └── ai-scenarios.js           ← AI 陪练情景与提示词
 ├── lessons/                   ← 由数据自动生成的讲义（Markdown）
 ├── docs/
 │   └── spoken-grammar.md      ← 口语语法速查
+├── tests/                     ← 自动测试（Playwright）
+├── .github/workflows/         ← 推送后自动测试；网站更新后检查线上版本
 └── scripts/
     ├── load-data.mjs
     ├── check-data.mjs         ← 数据完整性检查
     ├── build-docs.mjs         ← 重新生成 lessons/
-    └── build-artifact.mjs     ← 打包网页版 dist/korean-speaking.html
+    ├── build-vocab.mjs        ← 重新生成单词例句索引
+    ├── stamp-assets.mjs       ← 版本号 + 离线缓存清单
+    ├── build-artifact.mjs     ← 打包 claude.ai 网页版 dist/korean-speaking.html
+    ├── check-live.mjs         ← 检查线上网站是不是最新、能不能用
+    └── publish.mjs            ← 检查 + 测试通过后才发布到公开仓库
+```
+
+## 修改内容后：检查、测试、发布
+
+第一次先安装测试工具：
+
+```bash
+npm install
+```
+
+```bash
+npx playwright install chromium
 ```
 
 修改或新增课程内容后：
 
 ```bash
-node scripts/check-data.mjs
+npm run check
 ```
 
 ```bash
@@ -257,10 +283,23 @@ node scripts/build-docs.mjs
 ```
 
 ```bash
-node scripts/stamp-assets.mjs
+npm run build
 ```
 
-（最后一条给网页文件加版本号，避免浏览器缓存把新旧文件混在一起用。）
+```bash
+npm test
+```
+
+- `npm run check`：数据完整性检查（格式、重复、缺字段……）
+- `npm run build`：给网页文件加版本号、生成离线缓存清单、打包 claude.ai 网页版。**每次改了 `app/` 都要运行**，不然手机可能把新旧文件混在一起用（自动测试会检查这一点）
+- `npm test`：全部自动测试，约 5 分钟（大部分时间是全站巡检）。包括全站巡检（每一课、每一天、每个情景都打开一遍，检查脚本错误、空白页、手机上横向溢出）、进度存储格式、两台设备云同步合并、单词练习、底部导航、备份和导入、出错提示、离线、体积和速度上限。`npm run test:fast` 是抽样的快速版
+- 推送到 GitHub 后会自动再跑一遍测试（Actions 里的「测试」），没通过会显示红叉并发邮件；网站部署完成后「线上检查」会确认线上版本是最新的、文件都能下载
+
+发布到公开仓库（作者用）：测试通过才会同步和推送，推送后等线上部署完成再检查一遍：
+
+```bash
+node scripts/publish.mjs ../korean-speaking --push --message="更新说明"
+```
 
 ---
 

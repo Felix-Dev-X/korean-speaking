@@ -1,0 +1,36 @@
+# 每次推送自动检查：数据检查 → 版本号是否最新 → 全部自动测试（含全站巡检、离线、云同步合并）。
+# 没通过的话 GitHub 会在提交旁边显示红叉，并发邮件提醒。
+name: 测试
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 安装测试工具
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: 数据检查
+        run: node scripts/check-data.mjs
+      - name: 版本号和离线缓存是不是最新
+        run: |
+          node scripts/stamp-assets.mjs
+          if ! git diff --quiet -- app/index.html app/sw.js; then
+            git diff --stat -- app/index.html app/sw.js
+            echo "::error::版本号或离线缓存没有更新：请在本地运行 npm run build 后再提交"
+            exit 1
+          fi
+          node scripts/build-artifact.mjs
+      - name: 自动测试
+        run: node tests/run.mjs

@@ -1,0 +1,25 @@
+# 网站更新后检查线上版本：GitHub Pages 部署完成后，打开线上网址，
+# 确认版本号和仓库里一致、所有文件都能下载、首页和单词页能正常打开。
+name: 线上检查
+
+on:
+  page_build:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 1'   # 每周一检查一次（北京时间 11:17）
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 安装测试工具
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: 检查线上网站
+        run: node scripts/check-live.mjs --wait 8

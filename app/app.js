@@ -8,6 +8,12 @@
   'use strict';
 
   const K = window.KSS;
+  if (!K || !K.units || !K.weeks || (window.KSS_MISSING && window.KSS_MISSING.length)) {
+    const el = document.getElementById('app');
+    if (el) el.innerHTML = '<div class="card"><h2>课程数据没有加载完整</h2><p>可能是网络不稳定，或者网页刚更新、浏览器还在用旧文件。请<b>刷新页面</b>（手机下拉刷新；电脑按 Ctrl+Shift+R）。</p><button class="btn primary" onclick="location.reload()">刷新页面</button></div>';
+    if (window.KSS_ERR) window.KSS_ERR.log('课程数据没有加载完整：' + ((window.KSS_MISSING || []).join('、') || 'KSS.units / weeks 缺失'));
+    return;
+  }
   // 'artifact' = 发布在 claude.ai 的网页版：无麦克风；用手机键盘语音输入、用 Claude（sample）陪练、进度同步到账号（db）
   const ARTIFACT = window.KSS_ENV === 'artifact';
   const CLAUDE = ARTIFACT && window.claude && typeof window.claude.use === 'function' ? window.claude : null;
@@ -138,8 +144,9 @@
      体积不到原来的一半（学的越多越重要：云端同步是一整条记录，太大会同步失败）。内存里仍然是对象。 */
   function dayNum(d) { return Math.round(Date.parse(d) / 864e5); }
   function numDay(n) { return new Date(n * 864e5).toISOString().slice(0, 10); }
-  function packCards(m) { const o = {}; for (const k in m || {}) { const c = m[k]; o[k] = [dayNum(c.due), c.ivl || 0, Math.round((c.ease || 2.3) * 100), c.reps || 0, c.lapses || 0]; } return o; }
-  function unpackCards(m) { const o = {}; for (const k in m || {}) { const c = m[k]; o[k] = Array.isArray(c) ? { due: numDay(c[0]), ivl: c[1], ease: c[2] / 100, reps: c[3], lapses: c[4] } : c; } return o; }
+  // [到期日, 间隔, 难度×100, 次数, 忘记次数, 上次复习日（可选）]
+  function packCards(m) { const o = {}; for (const k in m || {}) { const c = m[k], a = [dayNum(c.due), c.ivl || 0, Math.round((c.ease || 2.3) * 100), c.reps || 0, c.lapses || 0]; if (c.last) a.push(dayNum(c.last)); o[k] = a; } return o; }
+  function unpackCards(m) { const o = {}; for (const k in m || {}) { const c = m[k]; o[k] = Array.isArray(c) ? Object.assign({ due: numDay(c[0]), ivl: c[1], ease: c[2] / 100, reps: c[3], lapses: c[4] }, c[5] ? { last: numDay(c[5]) } : {}) : c; } return o; }
   function packState(st) { return Object.assign({}, st, { v: 3, srs: packCards(st.srs), vocab: packCards(st.vocab), settings: Object.assign({}, st.settings, { apiKey: '' }) }); }
   function unpackState(o) { if (o && typeof o === 'object') { o.srs = unpackCards(o.srs); o.vocab = unpackCards(o.vocab); } return o; }
   function load() {
@@ -157,14 +164,78 @@
     try { const st = packState(S); st.settings.apiKey = S.settings.apiKey; localStorage.setItem(STORE_KEY, JSON.stringify(st)); }
     catch (e) { if (!saveLocal.warned) { saveLocal.warned = true; toast('⚠ 本机存储空间不够，进度可能没存上。请到「设置」导出备份。', 6000); } }
   }
+  /* 两份进度合并（换设备、两台设备都在用时不互相覆盖）：
+     复习卡 / 单词：每张取「上次复习」更晚的那份（没有记录就取到期日更晚的）；
+     练习记录：每天的时长、次数取较大值；完成记录取并集；收藏按时间和删除记录决定；
+     设置等其余字段取更新时间较晚的那份。 */
+  function mergeStates(a, b) {
+    a = a || {}; b = b || {};
+    const newer = (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a;
+    const out = Object.assign({}, a, b, newer);
+    const mm = (x, y, pick) => { const o = Object.assign({}, x || {}); for (const k in y || {}) o[k] = k in o ? pick(o[k], y[k]) : y[k]; return o; };
+    const card = (p, q) => {
+      const lp = p.last || '', lq = q.last || '';
+      if (lp !== lq) return lp > lq ? p : q;
+      if (p.due !== q.due) return p.due > q.due ? p : q;
+      return (p.reps || 0) + (p.lapses || 0) >= (q.reps || 0) + (q.lapses || 0) ? p : q;
+    };
+    const maxN = (p, q) => Math.max(+p || 0, +q || 0);
+    const early = (p, q) => (p && q ? (p < q ? p : q) : p || q);
+    const late = (p, q) => (p && q ? (p > q ? p : q) : p || q);
+    out.srs = mm(a.srs, b.srs, card);
+    out.vocab = mm(a.vocab, b.vocab, card);
+    out.log = mm(a.log, b.log, (p, q) => ({ sec: Math.max(p.sec || 0, q.sec || 0), reps: Math.max(p.reps || 0, q.reps || 0) }));
+    out.vocabNew = mm(a.vocabNew, b.vocabNew, maxN);
+    out.scenesDone = mm(a.scenesDone, b.scenesDone, maxN);
+    out.qaDone = mm(a.qaDone, b.qaDone, maxN);
+    out.daysDone = mm(a.daysDone, b.daysDone, early);
+    out.unitsDone = mm(a.unitsDone, b.unitsDone, early);
+    out.shadowDone = mm(a.shadowDone, b.shadowDone, late);
+    out.recap = mm(a.recap, b.recap, late);
+    out.missions = mm(a.missions, b.missions, (p, q) => (newer === b ? q : p));
+    out.unitSteps = mm(a.unitSteps, b.unitSteps, (p, q) => { const o = Object.assign({}, p); for (const k in q) o[k] = !!(o[k] || q[k]); return o; });
+    out.listenDone = mm(a.listenDone, b.listenDone, (p, q) => ({ date: early(p.date, q.date), best: Math.max(p.best || 0, q.best || 0) }));
+    out.weak = mm(a.weak, b.weak, (p) => p);
+    out.notes = mm(a.notes, b.notes, (p, q) => (newer === b ? q || p : p || q));
+    out.gone = mm(a.gone, b.gone, maxN);
+    out.custom = mm(a.custom, b.custom, (p, q) => ((q.at || 0) > (p.at || 0) ? q : p));
+    for (const id in out.gone) {
+      if (out.custom[id] && (out.custom[id].at || 0) < out.gone[id]) delete out.custom[id];
+      if (!out.custom[id]) delete out.srs[id];
+    }
+    out.startedAt = early(a.startedAt, b.startedAt);
+    out.updatedAt = Math.max(a.updatedAt || 0, b.updatedAt || 0);
+    out.settings = Object.assign({}, a.settings, b.settings, newer.settings,
+      { apiKey: (a.settings || {}).apiKey || '', lastExport: late((a.settings || {}).lastExport, (b.settings || {}).lastExport) || undefined });
+    if (!out.settings.lastExport) delete out.settings.lastExport;
+    out.dlgCards = a.dlgCards || b.dlgCards;
+    return out;
+  }
   /* 网页版：进度同步到观看者自己的账户（db 里 data/users/<id>/progress，只有本人能读写） */
   const CLOUD = { state: CLAUDE ? 'pending' : 'off', ready: false, ref: null, timer: null, writing: false, again: false, dirty: false, lastOk: 0, err: '', size: 0, warned: false };
   function cloudPayload() { const json = JSON.stringify(packState(S)); CLOUD.size = json.length; return { json, updatedAt: S.updatedAt || 0 }; }
+  // 读云端那份；没有就返回 null
+  async function cloudRead() {
+    const snap = await CLOUD.ref.get();
+    const body = snap.exists ? snap.data() : null;
+    return body && typeof body.json === 'string' ? { json: body.json, st: migrate(unpackState(JSON.parse(body.json))) } : null;
+  }
+  // 把云端那份合并进当前进度（就地修改 S），返回本机进度有没有因此变化
+  function absorb(remote) {
+    if (!remote) return false;
+    const before = JSON.stringify(packState(S));
+    const m = mergeStates(S, remote.st);
+    Object.keys(m).forEach((k) => { S[k] = m[k]; });
+    const changed = JSON.stringify(packState(S)) !== before;
+    if (changed) saveLocal();
+    return changed;
+  }
   async function cloudFlush() {
     if (!CLOUD.ready || !CLOUD.dirty) return;
     if (CLOUD.writing) { CLOUD.again = true; return; }
     CLOUD.writing = true; CLOUD.dirty = false;
-    try { await CLOUD.ref.set(cloudPayload()); CLOUD.lastOk = Date.now(); CLOUD.err = ''; }
+    // 先读后写：别的设备这期间写进去的进度先合并进来，再整份写回
+    try { absorb(await cloudRead()); await CLOUD.ref.set(cloudPayload()); CLOUD.lastOk = Date.now(); CLOUD.err = ''; }
     catch (e) {
       CLOUD.dirty = true; CLOUD.err = (e && (e.message || e.code)) || '未知错误';
       if (!CLOUD.warned) { CLOUD.warned = true; toast('⚠ 进度没能同步到账户。请到「设置」查看原因，并先导出一份备份。', 7000); }
@@ -184,21 +255,21 @@
       const [db, user] = await Promise.all([CLAUDE.use('db'), CLAUDE.use('user')]);
       const id = db && user ? await user.id() : null;
       if (!id) { CLOUD.state = 'off'; return; }
-      const ref = db.doc('data/users/' + id + '/progress');
-      const snap = await ref.get();
-      CLOUD.ref = ref; CLOUD.ready = true; CLOUD.state = 'on';
-      const body = snap.exists ? snap.data() : null;
-      if (body && typeof body.json === 'string' && (body.updatedAt || 0) > (S.updatedAt || 0)) {
-        const o = migrate(unpackState(JSON.parse(body.json))), d = defaults();
-        S = Object.assign(d, o, { settings: Object.assign(d.settings, o.settings || {}) });
-        CLOUD.lastOk = Date.now();
-        backfillDialogueCards(); saveLocal(); toast('已从你的账户同步学习进度'); route();
-      } else if (!body || (S.updatedAt || 0) > (body.updatedAt || 0)) {
-        CLOUD.dirty = true; cloudFlush();
-      } else CLOUD.lastOk = Date.now();
+      CLOUD.ref = db.doc('data/users/' + id + '/progress');
+      const remote = await cloudRead();
+      CLOUD.ready = true; CLOUD.state = 'on';
+      // 本机和账户里的进度合并：哪边都不丢
+      const hadLocal = hasProgress();
+      if (absorb(remote)) { backfillDialogueCards(); toast(hadLocal ? '已和你账户里的进度合并' : '已从你的账户同步学习进度'); route(); }
+      if (!remote || remote.json !== JSON.stringify(packState(S))) { CLOUD.dirty = true; cloudFlush(); } else CLOUD.lastOk = Date.now();
     } catch (e) { CLOUD.state = 'off'; CLOUD.ready = false; }
   }
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') cloudFlush(); });
+  // 切走时写云端；切回来时把别的设备的新进度合并进来
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') { cloudFlush(); return; }
+    if (!CLOUD.ready || CLOUD.writing) return;
+    cloudRead().then((r) => { if (absorb(r)) { const nm = (location.hash.match(/^#\/?([a-z]*)/) || [])[1] || ''; if (nm === '' || nm === 'home') route(); else updateTabBadges(); } }).catch(() => {});
+  });
   function save() { S.updatedAt = Date.now(); saveLocal(); cloudSoon(); }
 
   /* 练习时间与次数统计 */
@@ -677,14 +748,14 @@
     if (grade === 0) { c.ivl = 0; c.ease = Math.max(1.3, c.ease - 0.2); c.lapses++; c.reps = 0; c.due = today(); }
     else if (grade === 1) { c.ivl = Math.max(1, Math.round(c.ivl * 1.2)); c.ease = Math.max(1.3, c.ease - 0.15); c.reps++; c.due = addDays(today(), c.ivl); }
     else { c.ivl = c.ivl < 1 ? 1 : c.ivl < 3 ? 3 : Math.round(c.ivl * c.ease); c.ease = Math.min(3, c.ease + 0.05); c.reps++; c.due = addDays(today(), c.ivl); }
-    S.srs[id] = c; save();
+    c.last = today(); S.srs[id] = c; save();
   }
   const favId = (ko) => { let h = 0; const t = String(ko); for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return 'x' + (h >>> 0).toString(36); };
   function toggleFav(ko, zh, src) {
     S.custom = S.custom || {};
     const id = favId(ko);
-    if (S.custom[id]) { delete S.custom[id]; delete S.srs[id]; save(); return false; }
-    S.custom[id] = { ko, zh, src: src || '' };
+    if (S.custom[id]) { delete S.custom[id]; delete S.srs[id]; S.gone = S.gone || {}; S.gone[id] = Date.now(); save(); return false; }
+    S.custom[id] = { ko, zh, src: src || '', at: Date.now() };
     S.srs[id] = { due: today(), ivl: 0, ease: 2.3, reps: 0, lapses: 0 };
     save(); return true;
   }
@@ -786,7 +857,15 @@
       return;
     }
     closeMore();
-    (R[name] || viewHome).call(null, arg);
+    try { (R[name] || viewHome).call(null, arg); }
+    catch (err) {
+      const text = window.KSS_ERR ? window.KSS_ERR.log(err.message, err.stack) : String(err);
+      const el = setView(`<div class="card err-card"><h2>😵 这个页面出错了</h2><p class="muted">错误：${esc(err.message)}</p>
+        <p>先试试刷新。学习进度不会因此丢失。如果反复出现，请复制错误信息发给开发者。</p>
+        <div class="check-row"><button class="btn primary e-reload">刷新页面</button><button class="btn e-copy">复制错误信息</button><a class="btn ghost" href="#home">回首页</a></div></div>`);
+      $('.e-reload', el).onclick = () => location.reload();
+      $('.e-copy', el).onclick = () => copyText(text);
+    }
     updateHeaderStats();
     updateTabBadges();
   }
@@ -816,7 +895,7 @@
       }
       grid += '</div>';
     }
-    setView(`
+    const el = setView(`
       <section class="hero card">
         <div class="eyebrow">第 ${n} 天 / 共 ${TOTAL_DAYS} 天 · 第 ${info.w} 周：${esc(info.week.title)}</div>
         <h1>今天：${esc(todayTitle)}</h1>
@@ -827,6 +906,7 @@
           ${vocabTodayCount() ? `<a class="btn big" href="#vocab">背单词（${vocabTodayCount()}）</a>` : ''}
         </div>
       </section>
+      ${backupCardHtml()}
       <section class="stats">
         <div class="stat"><b>${streak()}</b><span>连续天数</span></div>
         <div class="stat"><b>${doneCount}</b><span>已完成天数</span></div>
@@ -866,6 +946,7 @@
         </div>
       </section>
     `);
+    bindBackupCard(el);
   }
 
   /* ═════════════ 课程列表 ═════════════ */
@@ -1533,7 +1614,7 @@
     if (grade === 0) { c.ivl = 0; c.ease = Math.max(1.3, c.ease - 0.2); c.lapses++; c.reps = 0; c.due = today(); }
     else if (grade === 1) { c.ivl = Math.max(1, Math.round(c.ivl * 1.2)); c.ease = Math.max(1.3, c.ease - 0.15); c.reps++; c.due = addDays(today(), c.ivl); }
     else { c.ivl = c.ivl < 1 ? 1 : c.ivl < 3 ? 3 : Math.round(c.ivl * c.ease); c.ease = Math.min(3, c.ease + 0.05); c.reps++; c.due = addDays(today(), c.ivl); }
-    S.vocab[ko] = c; save();
+    c.last = today(); S.vocab[ko] = c; save();
   }
   const vDue = () => VOCAB.filter((w) => S.vocab[w.ko] && S.vocab[w.ko].due <= today());
   // 每天新词：settings.vocabDaily，0 = 不限
@@ -1746,8 +1827,11 @@
   const VMODES = [['card', '🃏 卡片'], ['listen', '👂 听音选义'], ['choice', '⚡ 选择题'], ['dict', '✍️ 听写']];
   const VMODE_TIP = { card: '卡片：自己想，翻面后自评', listen: '听音选义：只听发音，从 4 个中文里选', choice: '选择题快刷：看韩语选中文，答对自动下一个', dict: '听写：听发音，打出韩语' };
   const vMode = () => (VMODES.some((m) => m[0] === S.settings.vocabMode) ? S.settings.vocabMode : 'card');
-  // 选项里的中文：最多两个义项，去掉括号里的韩语提示（不然等于把答案告诉你了）
-  const vZhShort = (z) => z.split('；').slice(0, 2).join('；').replace(/（[^）]*[가-힣][^）]*）|\([^)]*[가-힣][^)]*\)/g, '').trim() || z;
+  // 选项里的中文：最多两个义项，去掉韩语提示（不然等于把答案告诉你了）。
+  // 词典里「“너는(你，你呢)”的缩略语」这种只留括号里的中文
+  const vZhShort = (z) => z.split('；').slice(0, 2).join('；')
+    .replace(/“[^”]*?\(([^)]*)\)”的缩略语?/g, '$1')
+    .replace(/（[^）]*[가-힣][^）]*）|\([^)]*[가-힣][^)]*\)/g, '').trim() || z;
   // 干扰项：同词性、等级相近、中文意思不重叠的 3 个词
   function vOptions(w) {
     const pos = (w.pos || '').split('·')[0], head = (z) => z.split(/[；，、]/)[0].trim();
@@ -2745,14 +2829,90 @@
   /* ═════════════ 设置 ═════════════ */
   let DOWNLOADS = null;
   if (CLAUDE) CLAUDE.use('downloads').then((d) => { DOWNLOADS = d || null; }).catch(() => {});
+  /* 读进度文件：检查是不是本 App 导出的，返回 { st } 或 { err } */
+  const PROGRESS_KEYS = ['srs', 'vocab', 'log', 'daysDone', 'unitsDone', 'settings', 'custom'];
+  function parseProgress(text) {
+    let o;
+    try { o = JSON.parse(text); } catch (e) { return { err: '这不是有效的进度文件（无法读取）。' }; }
+    if (!o || typeof o !== 'object' || Array.isArray(o) || !PROGRESS_KEYS.some((k) => k in o)) return { err: '这个文件不是本 App 导出的学习进度。' };
+    for (const k of ['srs', 'vocab', 'log', 'daysDone', 'custom']) if (k in o && (typeof o[k] !== 'object' || o[k] === null || Array.isArray(o[k]))) return { err: `进度文件内容不完整（${k} 格式不对）。` };
+    try { return { st: migrate(unpackState(o)) }; } catch (e) { return { err: '进度文件内容有错，无法读取。' }; }
+  }
+  function progressSummary(st) {
+    const n = (o) => Object.keys(o || {}).length;
+    const days = Object.keys(st.log || {}).sort();
+    return `完成 ${n(st.daysDone)} 天 · 复习卡 ${n(st.srs)} 张 · 单词 ${n(st.vocab)} 个 · 收藏 ${n(st.custom)} 句${days.length ? ` · 练习记录 ${days[0]} ~ ${days[days.length - 1]}` : ''}`;
+  }
+  function preImport() { try { return JSON.parse(localStorage.getItem(STORE_KEY + '-before-import') || 'null'); } catch (e) { return null; } }
+  const appVersion = () => (window.KSS_ERR ? window.KSS_ERR.version() : window.KSS_VERSION || '开发版');
+  const errCount = () => (window.KSS_ERR ? window.KSS_ERR.recent().length : 0);
+
+  /* 导出进度文件。成功返回 true，并记下导出日期 */
+  async function exportProgress() {
+    const data = JSON.stringify(packState(S));
+    const filename = `korean-speaking-progress-${today()}.json`;
+    const done = () => { S.settings.lastExport = today(); save(); toast('已导出备份'); return true; };
+    if (ARTIFACT) {
+      if (!DOWNLOADS) { toast('这里不能导出，请到「设置」里试试'); return false; }
+      try { const r = await DOWNLOADS.save({ filename, data }); return r && r.status === 'saved' ? done() : false; }
+      catch (err) { if (!err || err.code !== 'declined') toast('导出失败'); return false; }
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+    a.download = filename; a.click();
+    return done();
+  }
+  /* 本地存储的安全：
+     - 向浏览器申请「长期保存」（空间不足时不优先清理）
+     - iPhone Safari 里，网站 7 天没打开，本地数据可能被清掉；从主屏幕打开的不会 → 引导添加到主屏幕
+     - 进度只在本机时，超过 7 天没备份就在首页提醒 */
+  let STORE_PERSIST = null;   // true / false / null（不支持）
+  const STANDALONE = !!(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches));
+  function askPersist() {
+    try {
+      if (!navigator.storage || !navigator.storage.persist) return;
+      navigator.storage.persisted().then((v) => (v ? v : navigator.storage.persist())).then((v) => { STORE_PERSIST = !!v; }).catch(() => {});
+    } catch (e) { /* ignore */ }
+  }
+  const daysSince = (d) => (d ? Math.round((Date.parse(today()) - Date.parse(d)) / 864e5) : 9999);
+  const hasProgress = () => Object.keys(S.srs).length + Object.keys(S.vocab).length + Object.keys(S.log).length > 0;
+  const localOnly = () => !(ARTIFACT && CLOUD.ready);
+  function backupDue() {
+    if (!localOnly() || !hasProgress()) return false;
+    if (daysSince(S.settings.backupSnooze) < 3) return false;
+    return daysSince(S.settings.lastExport || S.startedAt) >= 7;
+  }
+  function backupCardHtml() {
+    const a2hs = IOS && !ARTIFACT && !STANDALONE;
+    if (!backupDue() && !(a2hs && !S.settings.a2hsHide && hasProgress())) return '';
+    const last = S.settings.lastExport;
+    return `<section class="card backup-card">
+      ${backupDue() ? `<b>📦 该备份进度了</b><p class="small">进度只存在这台设备的浏览器里，${last ? `上次备份是 ${daysSince(last)} 天前` : '还没有备份过'}。导出一个文件存好（例如存到「文件」App 或网盘），换手机、清浏览器数据都不怕。</p>
+      <div class="check-row"><button class="btn primary small bk-export">导出备份</button><button class="btn ghost small bk-later">3 天后再提醒</button></div>` : ''}
+      ${a2hs && !S.settings.a2hsHide ? `<div class="a2hs small"><b>📲 建议添加到主屏幕</b>：Safari 里一个网站 7 天没打开，它存在本机的数据可能会被系统清掉；从主屏幕图标打开的不会，而且像 App 一样全屏。<br>
+        方法：点 Safari 底部的「分享」<span aria-hidden="true">⬆︎</span> →「添加到主屏幕」。<br>
+        <b>注意</b>：主屏幕上的 App 和 Safari 的数据是分开的——添加前先在这里「导出备份」，再在主屏幕 App 的「设置 → 导入进度」里导入。
+        <div class="check-row"><button class="btn ghost small a2hs-hide">知道了，不再显示</button></div></div>` : ''}
+    </section>`;
+  }
+  function bindBackupCard(el) {
+    const ex = $('.bk-export', el); if (ex) ex.onclick = () => exportProgress().then((ok) => { if (ok) route(); });
+    const lt = $('.bk-later', el); if (lt) lt.onclick = () => { S.settings.backupSnooze = today(); save(); route(); };
+    const hd = $('.a2hs-hide', el); if (hd) hd.onclick = () => { S.settings.a2hsHide = true; save(); route(); };
+  }
+
   /* 设置页：同步状态、数据大小、上次导出 */
   function syncStatusHtml() {
     const kb = Math.round((CLOUD.size || JSON.stringify(packState(S)).length) / 1024);
     const t = (ms) => { const d = new Date(ms); return `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
     const lines = [];
     if (ARTIFACT && CLOUD.ready) lines.push(CLOUD.err ? `<span class="bad-txt">⚠ 同步失败：${esc(CLOUD.err)}。进度还在这台设备上，请先导出备份。</span>` : CLOUD.lastOk ? `✅ 已同步（${t(CLOUD.lastOk)}）` : '正在同步……');
-    lines.push(`进度数据 ${kb} KB${kb > 700 ? ' <span class="bad-txt">（偏大，建议定期导出备份）</span>' : ''}`);
-    lines.push(S.settings.lastExport ? `上次导出备份：${esc(S.settings.lastExport)}` : '还没有导出过备份');
+    lines.push(`进度数据 ${kb < 1 ? "不到 1" : kb} KB${kb > 700 ? ' <span class="bad-txt">（偏大，建议定期导出备份）</span>' : ''}`);
+    lines.push(S.settings.lastExport ? `上次导出备份：${esc(S.settings.lastExport)}（${daysSince(S.settings.lastExport)} 天前）` : '还没有导出过备份');
+    if (!ARTIFACT) {
+      lines.push(STORE_PERSIST ? '本机存储：✅ 浏览器已同意长期保存' : STORE_PERSIST === false ? '本机存储：浏览器没有同意长期保存，空间不足时可能被清理，请定期导出备份' : '本机存储：这个浏览器不支持「长期保存」申请，请定期导出备份');
+      if (IOS) lines.push(STANDALONE ? '📲 正在用主屏幕 App 打开（不会被 Safari 的 7 天规则清理）' : '<span class="bad-txt">iPhone Safari：网站 7 天没打开，本机数据可能被清掉。建议添加到主屏幕（分享 → 添加到主屏幕），添加前先导出、添加后再导入。</span>');
+    }
     return lines.map((x) => `<div class="small">${x}</div>`).join('');
   }
   function viewSettings() {
@@ -2788,7 +2948,23 @@
         <p class="muted">${ARTIFACT ? (CLOUD.ready ? '进度同步到你的 Claude 账户，换手机/电脑登录同一账户就能接着练。' : CLOUD.state === 'pending' ? '正在连接云端同步……' : '进度保存在这个浏览器里（登录 claude.ai 后打开可以同步到账户）。') : '进度只保存在这台设备的浏览器里。换设备前请导出。'}</p>
         <div class="sync-box">${syncStatusHtml()}</div>
         <div class="check-row">${canExport ? '<button class="btn export">导出进度</button>' : ''}<label class="btn ghost">导入进度<input type="file" accept=".json,application/json" class="import" id="import-file" hidden></label><button class="btn danger reset">重置全部进度</button></div>
+        <div class="import-box"></div>
+        ${preImport() ? `<p class="small muted">导入前的进度保存在本机（${esc(preImport().at)}）。<button class="btn small ghost undo-import">恢复导入前的进度</button></p>` : ''}
+      </section>
+      <section class="card"><h2>关于</h2>
+        <p class="small">版本：<code>${esc(appVersion())}</code>${ARTIFACT ? '（claude.ai 网页版）' : STANDALONE ? '（主屏幕 App）' : ''}${!ARTIFACT && 'serviceWorker' in navigator ? ` · 离线可用：${navigator.serviceWorker.controller ? '✅' : '第一次打开后可用'}` : ''}</p>
+        ${errCount() ? `<p class="small">最近有 ${errCount()} 条错误记录。<button class="btn small ghost copy-errs">复制错误信息</button><button class="btn small ghost clear-errs">清除记录</button></p>` : '<p class="small muted">没有错误记录。</p>'}
       </section>`);
+    const ce = $('.copy-errs', el); if (ce) ce.onclick = () => copyText(window.KSS_ERR.recent().join('\n\n────────\n\n'));
+    const cl = $('.clear-errs', el); if (cl) cl.onclick = () => { try { localStorage.removeItem('kss-errors'); } catch (e) { /* ignore */ } viewSettings(); };
+    const ui = $('.undo-import', el);
+    if (ui) ui.onclick = () => confirmInline(ui.closest('p'), '用导入前的进度替换现在的进度？', '恢复', () => {
+      const b = preImport(); if (!b) return;
+      const o = migrate(unpackState(JSON.parse(b.json))); const key = S.settings.apiKey;
+      S = Object.assign(defaults(), o); S.settings = Object.assign(defaults().settings, o.settings || {}, { apiKey: key });
+      save(); try { localStorage.removeItem(STORE_KEY + '-before-import'); } catch (e) { /* ignore */ }
+      toast('已恢复导入前的进度'); route();
+    });
     $('.voice', el).onchange = (e) => { S.settings.voiceURI = e.target.value; save(); };
     $('.rate', el).oninput = (e) => { S.settings.rate = +e.target.value; $('.rv', el).textContent = e.target.value; save(); };
     $('.test-voice', el).onclick = () => speak('안녕하세요. 오늘도 같이 열심히 말해 봐요!');
@@ -2804,24 +2980,29 @@
       $('.model', el).onchange = (e) => { S.settings.model = e.target.value; save(); };
     }
     const exp = $('.export', el);
-    if (exp) exp.onclick = async () => {
-      const data = JSON.stringify(packState(S));
-      const filename = `korean-speaking-progress-${today()}.json`;
-      const done = () => { S.settings.lastExport = today(); save(); const sb = $('.sync-box', el); if (sb) sb.innerHTML = syncStatusHtml(); };
-      if (ARTIFACT) {
-        try { const r = await DOWNLOADS.save({ filename, data }); if (r && r.status === 'saved') { toast('已导出'); done(); } }
-        catch (err) { if (!err || err.code !== 'declined') toast('导出失败'); }
-        return;
-      }
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
-      a.download = filename; a.click(); done();
-    };
+    if (exp) exp.onclick = () => exportProgress().then((ok) => { if (ok) { const sb = $('.sync-box', el); if (sb) sb.innerHTML = syncStatusHtml(); } });
     $('.import', el).onchange = (e) => {
       const f = e.target.files[0]; if (!f) return;
+      e.target.value = '';
       f.text().then((t) => {
-        try { const o = migrate(unpackState(JSON.parse(t))); const key = S.settings.apiKey; S = Object.assign(defaults(), o); S.settings = Object.assign(defaults().settings, o.settings || {}, { apiKey: key }); save(); toast('导入成功'); route(); }
-        catch (err) { toast('文件格式不对'); }
+        const r = parseProgress(t);
+        const box = $('.import-box', el);
+        if (r.err) { box.innerHTML = `<p class="bad-txt small">⚠ ${esc(r.err)}现在的进度没有改动。</p>`; return; }
+        box.innerHTML = `<div class="imp card-inner"><b>文件里的进度</b><div class="small">${esc(progressSummary(r.st))}</div>
+          <div class="small muted">现在的进度：${esc(progressSummary(S))}</div>
+          <div class="check-row"><button class="btn primary small imp-merge">合并（推荐）</button><button class="btn small imp-replace">替换现在的进度</button><button class="btn small ghost imp-cancel">取消</button></div>
+          <div class="small muted">合并：两边学过的都保留，同一张卡取最近复习的那份。导入前会先把现在的进度存一份，可以恢复。</div></div>`;
+        const apply = (mode) => {
+          try { localStorage.setItem(STORE_KEY + '-before-import', JSON.stringify({ at: new Date().toLocaleString(), json: JSON.stringify(packState(S)) })); } catch (err) { /* ignore */ }
+          const key = S.settings.apiKey;
+          if (mode === 'merge') { const m = mergeStates(S, r.st); Object.keys(m).forEach((k) => { S[k] = m[k]; }); }
+          else { S = Object.assign(defaults(), r.st); S.settings = Object.assign(defaults().settings, r.st.settings || {}); }
+          S.settings.apiKey = key;
+          backfillDialogueCards(); save(); toast(mode === 'merge' ? '已合并导入的进度' : '已用文件里的进度替换'); route();
+        };
+        $('.imp-merge', box).onclick = () => apply('merge');
+        $('.imp-replace', box).onclick = () => apply('replace');
+        $('.imp-cancel', box).onclick = () => { box.innerHTML = ''; };
       });
     };
     const rs = $('.reset', el);
@@ -2833,6 +3014,10 @@
   /* ═════════════ 启动 ═════════════ */
   window.addEventListener('hashchange', route);
   function boot() {
+    if (!ARTIFACT) askPersist();
+    if (!ARTIFACT && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+      window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch((e) => { if (window.KSS_ERR) window.KSS_ERR.log('离线缓存注册失败：' + e.message); }); });
+    }
     const mb = $('#tabbar .tb-more'); if (mb) mb.onclick = (e) => { e.preventDefault(); if ($('#more-sheet')) closeMore(); else openMore(); };
     // 打字/键盘语音输入时把底部导航藏起来，不挡输入框
     const isField = (t) => t && (t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && /^(text|search|number|)$/.test(t.type || '')));
@@ -2858,5 +3043,5 @@
   backfillDialogueCards();
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
   // 调试/测试用
-  window.__kss = { state: () => S, addWeak, cardById, cardsOfUnit, recapUnits, dayInfo, bestScore, diffHtml, UNITS, SCENES, TOTAL_DAYS, sino, native, NUM_TYPES };
+  window.__kss = { state: () => S, vocab: () => VOCAB, vZhShort, mergeStates, packState, unpackState, addWeak, cardById, cardsOfUnit, recapUnits, dayInfo, bestScore, diffHtml, UNITS, SCENES, TOTAL_DAYS, sino, native, NUM_TYPES };
 })();
