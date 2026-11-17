@@ -555,6 +555,54 @@ details.model .toolbar { margin-top: 10px; }
 .err-acts { display: flex; gap: 8px; margin-top: 8px; }
 .imp { background: var(--bg); border-radius: 10px; padding: 10px 12px; margin: 8px 0; line-height: 1.7; }
 
+/* ── 背词全屏专注模式 ── */
+body.vf-open { overflow: hidden; }
+body.vf-open .tabbar { display: none !important; }
+.toast { z-index: 210; }
+.vf { position: fixed; inset: 0; z-index: 150; background: var(--bg); display: flex; flex-direction: column; height: 100vh; height: 100dvh;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px); }
+.vf-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px 8px; max-width: 640px; width: 100%; margin: 0 auto; }
+.vf-x { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--ink); font-size: 1rem; cursor: pointer; flex: none; }
+.vf-prog { flex: 1; min-width: 0; }
+.vf-bar { height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.vf-bar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 99px; transition: width .25s; }
+.vf-count { font-size: .78rem; color: var(--muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vf-mode { font-size: .78rem; color: var(--muted); flex: none; }
+.vf-body { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; display: flex; flex-direction: column; padding: 4px 16px 12px; }
+.vf-card { margin: auto; width: 100%; max-width: 560px; padding: 8px 0; }
+.vf-card.vf-top-align { margin-top: 8px; }
+.vf-body.vf-flipped .vf-card { margin-top: 8px; }
+.vf-tap { cursor: pointer; min-height: 40%; }
+.vf-card .v-front { font-size: 2.6rem; margin: 6px 0 8px; }
+.vf-card .v-front.zh-front { font-size: 1.7rem; }
+.vf-card .v-mean { font-size: 1.35rem; text-align: center; margin: 4px 0 6px; font-weight: 600; }
+.vf-ans .v-front { font-size: 2rem; }
+.vf-hint { margin-top: 18px; }
+.vf-play { min-width: 200px; min-height: 64px; font-size: 1.15rem; }
+.vf-done { text-align: center; }
+.vf-big { font-size: 3.2rem; }
+.vf-foot { flex: none; padding: 10px 16px calc(12px + env(safe-area-inset-bottom, 0px)); max-width: 640px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); background: var(--bg); }
+.vf-main { width: 100%; min-height: 56px; font-size: 1.1rem; justify-content: center; }
+.vf-row { display: flex; gap: 8px; }
+.vf-row > .btn { flex: 1; min-height: 52px; justify-content: center; }
+.vf-rate { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.vf-rate .btn { flex-direction: column; min-height: 64px; justify-content: center; gap: 2px; font-size: 1.3rem; }
+.vf-rate .btn span { font-size: .9rem; }
+.vf-rate .r0 { border-color: var(--bad); }
+.vf-rate .r2 { border-color: var(--good); }
+.vf-foot .v-opts { margin: 0; max-width: none; gap: 8px; }
+.vf-foot .v-opt { min-height: 52px; gap: 10px; }
+.vf-foot .v-opt .k { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--bg); border: 1px solid var(--line); font-size: .75rem; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
+.vf-foot .v-skip { align-self: center; }
+.vf .v-dict { margin: 16px auto 6px; }
+.vf .v-dict input { font-size: 1.3rem; min-height: 52px; width: 100%; }
+.vf .v-res { margin: 14px 0 6px; }
+@media (min-width: 761px) { .vf-foot { border-top: 0; } }
+@media (max-height: 640px) { .vf-card .v-front { font-size: 2.1rem; } .vf-rate .btn { min-height: 54px; } }
+body.vf-open .toast { bottom: auto; top: calc(64px + env(safe-area-inset-top, 0px)); }
+.vf-hint { text-align: center; display: block; }
+.vf .center-row { text-align: center; }
+
 </style>
 <header class="hdr">
     <div class="hdr-in">
@@ -588,7 +636,7 @@ details.model .toolbar { margin-top: 10px; }
     <a href="#more" data-t="more" class="tb-more"><i>☰</i><span>更多</span></a>
   </nav>
   <footer class="foot">每天开口 30 분 · 말이 늘어요 · 登录后进度自动同步到你的账户</footer>
-<script>window.KSS_ENV = 'artifact'; window.KSS_VERSION = "5c1afd72 · 2026-11-17";</script>
+<script>window.KSS_ENV = 'artifact'; window.KSS_VERSION = "24f18e55 · 2026-11-17";</script>
 <script>
 /* 出错提示：页面上的任何脚本错误都显示一条提示（而不是一片空白），
  * 可以一键复制错误信息（版本、页面、浏览器、出错位置）反馈给开发者。
@@ -37575,7 +37623,7 @@ KSS.buildGradePrompt = function () {
       if (t) t.textContent = `${(SEARCH_INDEX || []).length.toLocaleString()} 句 · ${VOCAB.length.toLocaleString()} 个单词`;
       if (sq && sq.value.trim()) sq.dispatchEvent(new Event('input'));
     } else if (name === 'vocab') {
-      if (!$('#app .v-session:not(.hidden)') && !$('#app .v-item.open')) route();
+      if (!document.body.classList.contains('vf-open') && !$('#app .v-item.open')) route();
       else { const n = $('#app .v-loading'); if (n) n.remove(); }
     } else if (name === '' || name === 'home') route();
   }
@@ -37660,7 +37708,6 @@ KSS.buildGradePrompt = function () {
           <div class="v-row"><span class="muted small">卡片方向</span><select class="v-dir"><option value="ko" ${dir === 'ko' ? 'selected' : ''}>看韩语 → 想中文</option><option value="zh" ${dir === 'zh' ? 'selected' : ''}>看中文 → 说韩语</option></select></div>
           <p class="muted small">到期要复习的词不受类别限制，全部都会出现。</p>
         </details>`}
-        <div class="v-session hidden"></div>
       </section>
       ${VOCAB_FULL ? '' : '<div class="v-loading muted small">⏳ 正在加载完整词库（1.5 万词），马上就好……</div>'}
       <h2 class="sec-title">总表</h2>
@@ -37683,15 +37730,10 @@ KSS.buildGradePrompt = function () {
     const vd = $('.v-daily', el); if (vd) vd.onchange = () => setDaily(vd.value === '' ? 0 : vd.value);
     const vr = $('.v-dir', el); if (vr) vr.onchange = () => { S.settings.vocabDir = vr.value; save(); viewVocab(arg); };
 
-    // ── 背词 ──
-    const box = $('.v-session', el);
+    // ── 背词：全屏专注模式 ──
     const run = (queue, extraFrom) => {
       if (!queue.length) { toast('没有要背的词了 🎉'); return; }
-      box.classList.remove('hidden'); $('.v-start', el).classList.add('hidden');
-      const ex = $('.v-extra', el); if (ex) ex.classList.add('hidden');
-      $$('.v-decks, .v-decks-h, .v-set, .v-modes', el).forEach((x) => x.classList.add('hidden'));
-      box.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      vSession(box, queue, () => viewVocab(arg), extraFrom);
+      vSession(queue, () => viewVocab(arg), extraFrom);
     };
     const morePool = () => vNewPool(sc, uid);
     $('.v-start', el).onclick = () => {
@@ -37838,115 +37880,179 @@ KSS.buildGradePrompt = function () {
     const a = vNorm(ans), k = vNorm(ko);
     return [...k].map((ch, i) => (a[i] === ch ? esc(ch) : `<mark>${esc(ch)}</mark>`)).join('');
   }
-  function vQuizCard(box, w, mode, head, grade) {
-    const after = `<div class="v-after hidden">
-        <div class="v-res"></div>
-        <div class="v-front" lang="ko">${esc(w.ko)}</div><div class="v-mean">${esc(w.zh)}</div>
-        <div class="muted small center-row">${[w.hj, w.pos].filter(Boolean).map(esc).join(' · ')}</div>
-        ${vDefHtml(w, 'center')}${vExHtml(w, true)}
-        <div class="check-row center-row acts"></div>
-        <div class="check-row center-row"><button class="btn primary v-next">下一个 ›</button></div></div>`;
-    if (mode === 'dict') {
-      box.innerHTML = `${head}<div class="center-row"><button class="btn big v-play">🔊 再听一遍</button></div>
-        <div class="v-dict"><input type="text" class="v-in" lang="ko" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="听到什么，打出来（韩语）">
-        <button class="btn primary v-ok">核对</button></div>
-        <div class="check-row center-row"><button class="btn small ghost v-hint">看中文提示</button><button class="btn small ghost v-skip">不会</button></div>
-        <div class="v-hinttxt muted center-row hidden">${esc(vZhShort(w.zh))}${w.pos ? ' · ' + esc(w.pos) : ''}</div>${after}`;
-    } else {
-      const opts = vOptions(w);
-      box.innerHTML = `${head}${mode === 'listen' ? '<div class="center-row"><button class="btn big v-play">🔊 再听一遍</button></div>' : `<div class="v-front" lang="ko">${esc(w.ko)}</div>`}
-        <div class="v-opts">${opts.map((o, i) => `<button class="btn v-opt" data-i="${i}">${esc(vZhShort(o.zh))}</button>`).join('')}</div>
-        <div class="check-row center-row"><button class="btn small ghost v-skip">不知道</button></div>${after}`;
-      const pick = (i) => {
-        const ok = opts[i] === w;
-        $$('.v-opt', box).forEach((b, j) => { b.disabled = true; if (opts[j] === w) b.classList.add('right'); else if (j === i) b.classList.add('wrong'); });
-        finish(ok);
-      };
-      $$('.v-opt', box).forEach((b) => (b.onclick = () => pick(+b.dataset.i)));
-      $('.v-skip', box).onclick = () => pick(-1);
-    }
+  /* ── 背词全屏专注模式 ──
+     顶部：结束 + 进度条；中间：卡片（内容多时只在这里滚动）；底部：按钮固定在大拇指够得到的位置，
+     每个词的按钮都在同一个地方，不用上下滑。电脑上：空格/回车 = 翻面/下一个，1 2 3 = 不认识/模糊/认识，1–4 = 选项，Esc = 结束。 */
+  function vAnswerHtml(w, noWord) {
+    return `<div class="vf-ans">
+      ${noWord ? '' : `<div class="v-front" lang="ko">${esc(w.ko)}</div>`}<div class="v-mean">${esc(w.zh)}</div>
+      <div class="muted small center-row">${[w.hj, w.pos].filter(Boolean).map(esc).join(' · ')}</div>
+      ${vDefHtml(w, 'center')}${vExHtml(w, true)}
+      <div class="check-row center-row acts"></div></div>`;
+  }
+  function vAnswerActs(el, w) {
+    const acts = $('.acts', el);
+    acts.appendChild(speakBtn(w.ko, '▶ 单词'));
+    if (vExKo(w)) acts.appendChild(speakBtn(vExKo(w), '▶ 例句'));
+    acts.appendChild(starBtn(w.ex || w.ko, w.ex ? w.exZh : w.zh, '单词 · ' + w.ko));
+  }
+  // 选择题 / 听音选义 / 听写。ui = { body, foot, keys }；grade(0|1|2) 记分并进入下一个
+  function vQuizCard(ui, w, mode, grade) {
+    const { body, foot } = ui;
+    let g = 0, answered = false;
+    const next = () => grade(g);
+    const showNext = (ok) => {
+      foot.innerHTML = `<button class="btn primary big vf-main v-next">下一个 ›</button>`;
+      $('.v-next', foot).onclick = next;
+      ui.keys = (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); next(); } };
+      if (ok && mode === 'choice') foot.firstChild.textContent = '下一个 ›（自动）';
+    };
+    const result = (ok, extra) => `<div class="v-res">${ok ? '<b class="good-txt">✅ 对了</b>' : '<b class="bad-txt">❌ 不对</b>'}${extra || ''}
+      <div class="muted small">${ok ? '算「认识」' : '算「不认识」，过几个会再出一次'}</div></div>`;
     const play = () => speak(w.ko);
-    if ($('.v-play', box)) { $('.v-play', box).onclick = play; setTimeout(play, 150); }
-    const aft = $('.v-after', box);
-    $('.acts', aft).appendChild(speakBtn(w.ko, '▶ 单词'));
-    if (vExKo(w)) $('.acts', aft).appendChild(speakBtn(vExKo(w), '▶ 例句'));
-    $('.acts', aft).appendChild(starBtn(w.ex || w.ko, w.ex ? w.exZh : w.zh, '单词 · ' + w.ko));
-    let g = 0;
-    $('.v-next', aft).onclick = () => grade(g);
-    function finish(ok, extra) {
-      g = ok ? 2 : 0;
-      $$('.v-skip, .v-hint', box).forEach((b) => b.classList.add('hidden'));
-      $('.v-res', aft).innerHTML = (ok ? '<b class="good-txt">✅ 对了</b>' : '<b class="bad-txt">❌ 不对</b>' + (extra || '')) + '<div class="muted small">' + (ok ? '算「认识」' : '算「不认识」，过几个会再出一次') + '</div>';
-      aft.classList.remove('hidden');
-      if (mode !== 'listen' || !ok) speak(w.ko);
-      // 选择题快刷：答对 0.9 秒后自动下一个
-      if (ok && mode === 'choice') { aft.classList.add('brief'); setTimeout(() => { if (box.contains(aft)) grade(2); }, 900); }
-      else $('.v-next', aft).focus({ preventScroll: true });
-    }
     if (mode === 'dict') {
-      const inp = $('.v-in', box);
+      body.innerHTML = `<div class="vf-card vf-top-align">
+          <div class="center-row"><button class="btn big v-play">🔊 再听一遍</button></div>
+          <div class="v-dict"><input type="text" class="v-in" lang="ko" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="听到什么，打出来（韩语）" enterkeyhint="done"></div>
+          <div class="v-hinttxt muted center-row hidden">${esc(vZhShort(w.zh))}${w.pos ? ' · ' + esc(w.pos) : ''}</div>
+          <div class="vf-after"></div></div>`;
+      foot.innerHTML = `<div class="vf-row"><button class="btn v-hint">看提示</button><button class="btn v-skip">不会</button><button class="btn primary v-ok">核对</button></div>`;
+      const inp = $('.v-in', body);
+      const finish = (ok, extra) => {
+        answered = true; g = ok ? 2 : 0; inp.disabled = true;
+        const af = $('.vf-after', body);
+        af.innerHTML = result(ok, extra) + vAnswerHtml(w);
+        vAnswerActs(af, w);
+        if (!ok && extra) { const ty = h('<div class="check-row center-row"><button class="btn small ghost v-typo">只是打错字，算「模糊」</button></div>'); $('.v-res', af).appendChild(ty); $('.v-typo', ty).onclick = () => grade(1); }
+        speak(w.ko); showNext(ok);
+        try { inp.blur(); } catch (e) { /* ignore */ }
+      };
       const check = () => {
+        if (answered) return;
         if (!inp.value.trim()) { inp.focus(); return; }
         const ok = vNorm(inp.value) === vNorm(w.ko);
-        inp.disabled = true; $('.v-ok', box).disabled = true;
         finish(ok, ok ? '' : `<div class="v-diff">你写的：<span lang="ko">${esc(inp.value.trim())}</span><br>正确的：<span lang="ko">${vDiff(inp.value, w.ko)}</span></div>`);
-        if (!ok) { const ty = h('<div class="check-row center-row"><button class="btn small ghost v-typo">只是打错字，算「模糊」</button></div>'); $('.v-res', box).appendChild(ty); $('.v-typo', ty).onclick = () => grade(1); }
       };
-      $('.v-ok', box).onclick = check;
-      inp.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); check(); } };
-      $('.v-hint', box).onclick = () => { $('.v-hinttxt', box).classList.remove('hidden'); $('.v-hint', box).classList.add('hidden'); };
-      $('.v-skip', box).onclick = () => { inp.disabled = true; $('.v-ok', box).disabled = true; finish(false); };
+      $('.v-ok', foot).onclick = check;
+      $('.v-skip', foot).onclick = () => { if (!answered) finish(false); };
+      $('.v-hint', foot).onclick = (e) => { $('.v-hinttxt', body).classList.remove('hidden'); e.target.disabled = true; };
+      inp.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); check(); } };
+      ui.keys = null;
       setTimeout(() => { try { inp.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }, 200);
+    } else {
+      const opts = vOptions(w);
+      body.innerHTML = `<div class="vf-card">
+          ${mode === 'listen' ? '<div class="center-row"><button class="btn big v-play vf-play">🔊 再听一遍</button></div>' : `<div class="v-front" lang="ko">${esc(w.ko)}</div>`}
+          <div class="vf-after"></div></div>`;
+      foot.innerHTML = `<div class="v-opts">${opts.map((o, i) => `<button class="btn v-opt" data-i="${i}"><span class="k">${i + 1}</span>${esc(vZhShort(o.zh))}</button>`).join('')}</div>
+        <button class="btn ghost small v-skip">不知道</button>`;
+      const pick = (i) => {
+        if (answered) return;
+        answered = true;
+        const ok = opts[i] === w; g = ok ? 2 : 0;
+        const af = $('.vf-after', body);
+        const mine = i >= 0 && !ok ? `<div class="small muted">你选的：${esc(vZhShort(opts[i].zh))}（这是「<span lang="ko">${esc(opts[i].ko)}</span>」）</div>` : '';
+        af.innerHTML = result(ok, mine) + (mode === 'listen' || !ok ? vAnswerHtml(w, mode === 'choice') : `<div class="v-mean">${esc(w.zh)}</div>`);
+        if ($('.acts', af)) vAnswerActs(af, w);
+        if (mode !== 'listen' || !ok) speak(w.ko);
+        showNext(ok);
+        body.scrollTop = 0;
+        // 选择题快刷：答对 0.9 秒后自动下一个
+        if (ok && mode === 'choice') { const cur = af; setTimeout(() => { if (body.contains(cur)) next(); }, 900); }
+      };
+      $$('.v-opt', foot).forEach((bt) => (bt.onclick = () => pick(+bt.dataset.i)));
+      $('.v-skip', foot).onclick = () => pick(-1);
+      ui.keys = (e) => { const n = +e.key; if (n >= 1 && n <= opts.length) { e.preventDefault(); pick(n - 1); } };
     }
+    if ($('.v-play', body)) { $('.v-play', body).onclick = play; setTimeout(play, 150); }
   }
 
-  /* 背词卡片：看韩语想中文（或看中文说韩语）→ 翻面 → 不认识 / 模糊 / 认识。
-     morePool：背完后可以"再背 20 个新词"（不受每天上限限制） */
-  function vSession(box, queue, onEnd, morePool) {
+  /* 背词：全屏专注模式。卡片：看韩语想中文（或看中文说韩语）→ 翻面 → 不认识 / 模糊 / 认识。
+     morePool：背完后可以"再背 20 个新词"（不受每天上限限制）；onEnd：回到单词页 */
+  function vSession(queue, onEnd, morePool) {
     const dir = S.settings.vocabDir || 'ko', mode = vMode();
+    const MODE_NAME = Object.fromEntries(VMODES);
     let done = 0, total = queue.length;
+    const ov = h(`<div class="vf" role="dialog" aria-label="背单词">
+        <div class="vf-head"><button class="vf-x" aria-label="结束">✕</button>
+          <div class="vf-prog"><div class="vf-bar"><i></i></div><div class="prog vf-count"></div></div>
+          <span class="vf-mode">${esc(MODE_NAME[mode] || '')}</span></div>
+        <div class="vf-body"></div>
+        <div class="vf-foot"></div></div>`);
+    const body = $('.vf-body', ov), foot = $('.vf-foot', ov), ui = { body, foot, keys: null };
+    document.body.appendChild(ov);
+    document.body.classList.add('vf-open');
+    let closed = false;
+    const close = () => {
+      if (closed) return; closed = true;
+      stopListen(); stopSpeak();
+      document.removeEventListener('keydown', onKey);
+      ov.remove(); document.body.classList.remove('vf-open');
+    };
+    onLeave(close);
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); end(); return; }
+      if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
+      if (ui.keys) ui.keys(e);
+    };
+    document.addEventListener('keydown', onKey);
+    const end = () => { if (!done) { close(); onEnd(); } else { queue.length = 0; render(); } };
+    $('.vf-x', ov).onclick = end;
+    function setProg(w) {
+      $('.vf-bar i', ov).style.width = (w ? Math.round((done / Math.max(total, 1)) * 100) : 100) + '%';
+      $('.vf-count', ov).textContent = w ? `${done + 1} / ${total}${!S.vocab[w.ko] ? ' · 新词' : ' · 复习'}${vSrcTag(w) ? ' · ' + vSrcTag(w) : ''}` : `本轮完成 ${done} 个`;
+      ov.dataset.ko = w ? w.ko : '';   // 当前的词（测试用）
+    }
     function render() {
       stopListen();
+      body.scrollTop = 0; ui.keys = null;
+      body.classList.remove('vf-flipped');
       if (!queue.length) {
+        setProg(null);
         const more = morePool ? morePool() : [];
-        box.innerHTML = `<h3>🎉 背完了 ${done} 个！</h3><p class="muted">「不认识」的词明天还会出现。</p>
-          <div class="check-row">${more.length ? `<button class="btn primary v-more20">再背 20 个新词</button><button class="btn v-more50">再背 50 个</button>` : ''}<button class="btn ghost v-back">回到单词页</button></div>`;
-        $('.v-back', box).onclick = onEnd;
+        body.innerHTML = `<div class="vf-card vf-done"><div class="vf-big">🎉</div><h2>背完了 ${done} 个！</h2><p class="muted">「不认识」的词明天还会出现。</p></div>`;
+        foot.innerHTML = `${more.length ? '<div class="vf-row"><button class="btn primary v-more20">再背 20 个新词</button><button class="btn v-more50">再背 50 个</button></div>' : ''}<button class="btn ${more.length ? 'ghost' : 'primary big vf-main'} v-back">回到单词页</button>`;
+        $('.v-back', foot).onclick = () => { close(); onEnd(); };
         const go = (n) => { queue.push(...more.slice(0, n)); total += Math.min(n, more.length); render(); };
-        if (more.length) { $('.v-more20', box).onclick = () => go(20); $('.v-more50', box).onclick = () => go(50); }
+        if (more.length) { $('.v-more20', foot).onclick = () => go(20); $('.v-more50', foot).onclick = () => go(50); }
+        ui.keys = (e) => { if (e.key === 'Enter') { e.preventDefault(); close(); onEnd(); } };
         return;
       }
       const w = queue[0];
-      const isNew = !S.vocab[w.ko];
-      const head = `<div class="prog">${done + 1} / ${total}${isNew ? ' · 新词' : ' · 复习'}${vSrcTag(w) ? ' · ' + esc(vSrcTag(w)) : ''}<button class="btn small ghost v-quit">结束</button></div>`;
+      setProg(w);
       const grade = (g) => { rateVocab(w.ko, g); queue.shift(); done++; if (g === 0) { queue.splice(Math.min(queue.length, 4), 0, w); total++; } render(); };
-      if (mode !== 'card') {
-        vQuizCard(box, w, mode, head, grade);
-        $('.v-quit', box).onclick = () => { queue.length = 0; render(); };
-        return;
-      }
-      box.innerHTML = `${head}
-        ${dir === 'ko' ? `<div class="v-front" lang="ko">${esc(w.ko)}</div>` : `<div class="v-front zh-front">${esc(w.zh)}</div>${w.pos ? `<div class="muted small center-row">${esc(w.pos)}</div>` : ''}`}
-        <div class="slot"></div>
-        <div class="v-back-side hidden">
-          ${dir === 'ko' ? `<div class="v-mean">${esc(w.zh)}</div>` : `<div class="v-front" lang="ko">${esc(w.ko)}</div>`}
-          <div class="muted small center-row">${[w.hj, w.pos].filter(Boolean).map(esc).join(' · ')}</div>
-          ${vDefHtml(w, 'center')}
-          ${vExHtml(w, true)}
-          <div class="check-row center-row acts"></div>
-        </div>
-        <div class="check-row center-row"><button class="btn ghost v-flip">翻面</button></div>
-        <div class="rate hidden check-row center-row"><button class="btn r0">😵 不认识</button><button class="btn r1">🤔 模糊</button><button class="btn r2">✅ 认识</button></div>`;
-      const back = $('.v-back-side', box), rate = $('.rate', box);
-      const flip = () => { back.classList.remove('hidden'); rate.classList.remove('hidden'); $('.v-flip', box).classList.add('hidden'); speak(w.ko); };
-      $('.acts', back).appendChild(speakBtn(w.ko, '▶ 单词'));
-      if (vExKo(w)) $('.acts', back).appendChild(speakBtn(vExKo(w), '▶ 例句'));
-      $('.acts', back).appendChild(starBtn(w.ex || w.ko, w.ex ? w.exZh : w.zh, '单词 · ' + w.ko));
-      if (dir === 'ko') { setTimeout(() => speak(w.ko), 150); }
-      else { $('.slot', box).appendChild(speakCheck(w.ko, { noWeak: true, onScore: flip, onSelf: flip })); }
-      $('.v-flip', box).onclick = flip;
-      $('.v-quit', box).onclick = () => { queue.length = 0; render(); };
-      $('.r0', box).onclick = () => grade(0); $('.r1', box).onclick = () => grade(1); $('.r2', box).onclick = () => grade(2);
+      if (mode !== 'card') { vQuizCard(ui, w, mode, grade); return; }
+      body.innerHTML = `<div class="vf-card vf-tap">
+          ${dir === 'ko' ? `<div class="v-front" lang="ko">${esc(w.ko)}</div>` : `<div class="v-front zh-front">${esc(w.zh)}</div>${w.pos ? `<div class="muted small center-row">${esc(w.pos)}</div>` : ''}`}
+          <div class="slot"></div>
+          <div class="vf-hint muted small center-row">${dir === 'ko' ? '先在心里想中文意思，再点屏幕或「翻面」' : '先说出韩语，再翻面对照'}</div>
+          <div class="v-back-side hidden">
+            ${dir === 'ko' ? `<div class="v-mean">${esc(w.zh)}</div>` : `<div class="v-front" lang="ko">${esc(w.ko)}</div>`}
+            <div class="muted small center-row">${[w.hj, w.pos].filter(Boolean).map(esc).join(' · ')}</div>
+            ${vDefHtml(w, 'center')}
+            ${vExHtml(w, true)}
+            <div class="check-row center-row acts"></div>
+          </div></div>`;
+      foot.innerHTML = `<button class="btn primary big vf-main v-flip">翻面</button>
+        <div class="rate vf-rate hidden"><button class="btn r0">😵<span>不认识</span></button><button class="btn r1">🤔<span>模糊</span></button><button class="btn r2">✅<span>认识</span></button></div>`;
+      const back = $('.v-back-side', body), rate = $('.rate', foot);
+      let flipped = false;
+      const flip = () => {
+        if (flipped) return; flipped = true;
+        back.classList.remove('hidden'); rate.classList.remove('hidden'); $('.v-flip', foot).classList.add('hidden');
+        const hn = $('.vf-hint', body); if (hn) hn.remove();
+        body.classList.add('vf-flipped');
+        speak(w.ko);
+        ui.keys = (e) => { const k = { 1: 0, 2: 1, 3: 2 }[e.key]; if (k != null) { e.preventDefault(); grade(k); } else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); grade(2); } };
+      };
+      vAnswerActs(back, w);
+      if (dir === 'ko') setTimeout(() => speak(w.ko), 150);
+      else $('.slot', body).appendChild(speakCheck(w.ko, { noWeak: true, onScore: flip, onSelf: flip }));
+      $('.v-flip', foot).onclick = flip;
+      // 点卡片空白处也能翻面（点按钮、链接、输入框时不算）
+      $('.vf-card', body).onclick = (e) => { if (!e.target.closest('button, a, input, textarea, select')) flip(); };
+      $('.r0', foot).onclick = () => grade(0); $('.r1', foot).onclick = () => grade(1); $('.r2', foot).onclick = () => grade(2);
+      ui.keys = (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); } };
     }
     render();
   }
