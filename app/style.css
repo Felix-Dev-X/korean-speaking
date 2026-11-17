@@ -440,3 +440,33 @@ details.model .toolbar { margin-top: 10px; }
 .v-session .prog { display: flex; justify-content: space-between; align-items: center; }
 .v-sentinel { height: 1px; }
 .v-filters .v-q { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); font: inherit; font-size: 16px; }
+
+/* 单词：今天的计划 + 词库卡片 */
+.v-plan { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.v-plan-n { text-align: center; min-width: 64px; }
+.v-plan-n b { display: block; font-size: 1.8rem; line-height: 1.1; }
+.v-plan-n span { font-size: .78rem; color: var(--muted); }
+.v-plan .v-start { margin-left: auto; }
+.v-sub { margin: 8px 0 4px; }
+.v-decks-h { margin: 14px 0 6px; }
+.v-decks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.v-deck { display: flex; flex-direction: column; gap: 3px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); text-decoration: none; background: var(--card); }
+.v-deck b { font-size: 1rem; }
+.v-deck small { font-size: .72rem; color: var(--muted); line-height: 1.3; }
+.v-deck em { color: var(--accent); font-style: normal; font-weight: 600; }
+.v-deck.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.v-bar2 { height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; margin: 4px 0 2px; }
+.v-bar2 > div { height: 100%; background: var(--accent); }
+.v-set { margin-top: 12px; }
+.v-set > summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
+.v-cat { font-size: .7rem; padding: 1px 6px; border-radius: 999px; }
+.v-cat.book { background: #e8eefc; color: #3354a8; }
+.v-cat.life { background: var(--good-soft); color: var(--good); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .v-cat.book { background: #24304d; color: #9fb6f0; } }
+:root[data-theme="dark"] .v-cat.book { background: #24304d; color: #9fb6f0; }
+@media (max-width: 420px) {
+  .v-decks { grid-template-columns: 1fr; }
+  .v-deck { flex-direction: row; flex-wrap: wrap; align-items: baseline; column-gap: 8px; }
+  .v-deck .v-bar2 { flex-basis: 100%; }
+  .v-plan .v-start { margin-left: 0; flex: 1 1 100%; }
+}

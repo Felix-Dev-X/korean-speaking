@@ -445,6 +445,36 @@ details.model .toolbar { margin-top: 10px; }
 .v-sentinel { height: 1px; }
 .v-filters .v-q { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); font: inherit; font-size: 16px; }
 
+/* 单词：今天的计划 + 词库卡片 */
+.v-plan { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.v-plan-n { text-align: center; min-width: 64px; }
+.v-plan-n b { display: block; font-size: 1.8rem; line-height: 1.1; }
+.v-plan-n span { font-size: .78rem; color: var(--muted); }
+.v-plan .v-start { margin-left: auto; }
+.v-sub { margin: 8px 0 4px; }
+.v-decks-h { margin: 14px 0 6px; }
+.v-decks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.v-deck { display: flex; flex-direction: column; gap: 3px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); text-decoration: none; background: var(--card); }
+.v-deck b { font-size: 1rem; }
+.v-deck small { font-size: .72rem; color: var(--muted); line-height: 1.3; }
+.v-deck em { color: var(--accent); font-style: normal; font-weight: 600; }
+.v-deck.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.v-bar2 { height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; margin: 4px 0 2px; }
+.v-bar2 > div { height: 100%; background: var(--accent); }
+.v-set { margin-top: 12px; }
+.v-set > summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
+.v-cat { font-size: .7rem; padding: 1px 6px; border-radius: 999px; }
+.v-cat.book { background: #e8eefc; color: #3354a8; }
+.v-cat.life { background: var(--good-soft); color: var(--good); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .v-cat.book { background: #24304d; color: #9fb6f0; } }
+:root[data-theme="dark"] .v-cat.book { background: #24304d; color: #9fb6f0; }
+@media (max-width: 420px) {
+  .v-decks { grid-template-columns: 1fr; }
+  .v-deck { flex-direction: row; flex-wrap: wrap; align-items: baseline; column-gap: 8px; }
+  .v-deck .v-bar2 { flex-basis: 100%; }
+  .v-plan .v-start { margin-left: 0; flex: 1 1 100%; }
+}
+
 </style>
 <header class="hdr">
     <div class="hdr-in">
@@ -37214,11 +37244,14 @@ KSS.buildGradePrompt = function () {
       if (x) Object.assign(w, { ex: x[0], exZh: x[1], exSrc: x[2], exLink: x[3], units: x[4] ? x[4].split(',') : [] }); else w.units = [];
       w.first = w.units.length ? Math.min(...w.units.map((id) => { const u = unitById(id); return u ? UNITS.indexOf(u) : 999; })) : 999;
       return w;
-    });
+    }).map((w, i) => ((w.idx = i), w));
   })();
-  const VSCOPES = [['course', '课程里出现过'], ['all', '全部'], ['1', '初级'], ['2', '中级'], ['3', '高级'], ['book', 'TOPIK 必备单词（书）'], ['daily', '生活词汇']];
-  const inScope = (w, sc) => sc === 'all' || (sc === 'course' ? w.units.length > 0 : sc === 'daily' ? !!w.daily : sc === 'book' ? w.src === 'book' : String(w.lv) === sc);
-  const vSrcTag = (w) => [w.src === 'book' ? 'TOPIK书' : w.src === 'nikl' ? '基础词典' : '', w.daily && w.src !== 'daily' ? '生活·' + w.daily : ''].filter(Boolean).join(' · ');
+  // 词表只分两类：「TOPIK 书」和「生活常用」（= 课程里出现过的词 + 生活词汇）；其余的词不分类，只在「全部」里
+  const isLife = (w) => w.units.length > 0 || !!w.daily;
+  const VSCOPES = [['life', '生活常用'], ['book', 'TOPIK 书'], ['all', '全部']];
+  const vDeck = () => { const d = S.settings.vocabScope; return d === 'book' || d === 'all' ? d : 'life'; };
+  const inScope = (w, sc) => !sc || sc === 'all' || (sc === 'book' ? w.src === 'book' : isLife(w));
+  const vSrcTag = (w) => [w.src === 'book' ? 'TOPIK 书' : '', isLife(w) ? '生活常用' : ''].filter(Boolean).join(' · ');
   // 例句：优先用本课程里出现过的句子（有中文、能跳转），没有就用词典例句
   const vExHtml = (w, full) => (w.ex
     ? `<div class="v-ex"><span lang="ko">${esc(w.ex)}</span><small>${esc(w.exZh)}${full ? '' : ' · '}${full ? '</small><small class="muted">出处：' : ''}<a href="${esc(w.exLink)}">${esc(w.exSrc)}</a></small></div>`
@@ -37239,11 +37272,12 @@ KSS.buildGradePrompt = function () {
   const vDailyLimit = () => (S.settings.vocabDaily == null ? 20 : +S.settings.vocabDaily);
   const vNewToday = () => S.vocabNew[today()] || 0;
   const vNewLeft = () => { const lim = vDailyLimit(); return lim <= 0 ? Infinity : Math.max(0, lim - vNewToday()); };
+  // 新词顺序：生活常用 / 全部 → 先背课程里越早出现的词；TOPIK 书 → 按书里的初、中、高级顺序
   function vNewPool(sc, uid) {
     const pool = VOCAB.filter((w) => !S.vocab[w.ko] && (uid ? w.units.includes(uid) : inScope(w, sc)));
-    return pool.sort((a, b) => a.first - b.first || a.lv - b.lv);
+    return pool.sort(sc === 'book' && !uid ? (a, b) => a.lv - b.lv || a.idx - b.idx : (a, b) => a.first - b.first || a.lv - b.lv || a.idx - b.idx);
   }
-  const vocabTodayCount = () => vDue().length + Math.min(vNewLeft(), vNewPool(S.settings.vocabScope || 'course').length);
+  const vocabTodayCount = () => vDue().length + Math.min(vNewLeft(), vNewPool(vDeck()).length);
   // 词首辅音（ㄲ 归 ㄱ……），用来做索引
   const V_INIT = ['ㄱ', 'ㄱ', 'ㄴ', 'ㄷ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅂ', 'ㅅ', 'ㅅ', 'ㅇ', 'ㅈ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
   const vInit = (w) => { const c = w.ko.charCodeAt(0) - 0xac00; return c >= 0 && c < 11172 ? V_INIT[Math.floor(c / 588)] : '#'; };
@@ -37252,7 +37286,7 @@ KSS.buildGradePrompt = function () {
   function viewVocab(arg) {
     const uid = arg && /^u\d+$/.test(arg) ? arg : null;
     const unit = uid ? unitById(uid) : null;
-    const sc = S.settings.vocabScope || 'course';
+    const sc = vDeck();
     const dir = S.settings.vocabDir || 'ko';
     const lim = vDailyLimit();
     const learned = Object.keys(S.vocab).length, fluent = VOCAB.filter((w) => vState(w) === 'fluent').length;
@@ -37260,38 +37294,55 @@ KSS.buildGradePrompt = function () {
     const newPool = vNewPool(sc, uid);
     const newCount = uid ? newPool.length : Math.min(vNewLeft(), newPool.length);
     const unitWords = uid ? VOCAB.filter((w) => w.units.includes(uid)) : null;
-    const el = setView(`<h1 class="page-title">${unit ? `第 ${lessonNo(unit)} 课的单词` : '单词'} <small>${unit ? esc(unit.title) + ' · ' + unitWords.length + ' 个' : '共 ' + VOCAB.length + ' 个'}</small></h1>
-      <div class="tip card">${VOCAB.length.toLocaleString()} 个词：国立国语院《韩国语基础词典》的初、中、高级学习词汇 + TOPIK 必备单词 + 课程对话里的生活词汇。常用词配了<b>本课程里真实出现过的例句</b>，其余配词典例句。可以按每天的计划背，也可以在下面的总表里<b>点任何一个词直接学</b>，都会算进学习记录。</div>
+    const deckCard = ([k, t]) => {
+      const ws = VOCAB.filter((w) => inScope(w, k));
+      const l = ws.filter((w) => S.vocab[w.ko]).length, fl = ws.filter((w) => vState(w) === 'fluent').length;
+      const pct = ws.length ? Math.round((l / ws.length) * 100) : 0;
+      const desc = { life: '课程和对话里用到的词', book: 'TOPIK 必备单词（书）', all: '全部单词' }[k];
+      return `<a class="v-deck ${sc === k ? 'on' : ''}" href="javascript:void 0" data-sc="${k}">
+        <b>${t}</b><small>${desc} · ${ws.length.toLocaleString()} 个</small>
+        <div class="v-bar2"><div style="width:${Math.max(pct, l ? 2 : 0)}%"></div></div>
+        <small>已学 ${l.toLocaleString()} · 熟练 ${fl.toLocaleString()}${sc === k ? ' · <em>正在背</em>' : ''}</small></a>`;
+    };
+    const el = setView(`<h1 class="page-title">${unit ? `第 ${lessonNo(unit)} 课的单词` : '单词'} <small>${unit ? esc(unit.title) + ' · ' + unitWords.length + ' 个' : '共 ' + VOCAB.length.toLocaleString() + ' 个'}</small></h1>
       <section class="card vocab-today">
-        <div class="v-stats"><div><b>${due.length}</b><span>待复习</span></div><div><b>${newCount}</b><span>${uid ? '本课新词' : lim <= 0 ? '新词（不限）' : '今天还剩新词'}</span></div><div><b>${vNewToday()}</b><span>今天已学新词</span></div><div><b>${learned}</b><span>已学</span></div><div><b>${fluent}</b><span>熟练</span></div></div>
-        ${uid ? '' : `<div class="v-row"><span class="muted small">新词从哪里来</span><div class="chips">${VSCOPES.map(([k, t]) => `<a class="chip ${sc === k ? 'on' : ''}" href="javascript:void 0" data-sc="${k}">${t}</a>`).join('')}</div></div>
-        <div class="v-row"><span class="muted small">每天新词</span>
-          <input type="number" class="v-daily" min="0" max="9999" step="5" value="${lim > 0 ? lim : ''}" placeholder="不限" inputmode="numeric">
-          <div class="chips">${[10, 20, 50, 100, 200].map((n) => `<a class="chip ${lim === n ? 'on' : ''}" href="javascript:void 0" data-n="${n}">${n}</a>`).join('')}<a class="chip ${lim <= 0 ? 'on' : ''}" href="javascript:void 0" data-n="0">不限</a></div></div>
-        <div class="v-row"><span class="muted small">方向</span><select class="v-dir"><option value="ko" ${dir === 'ko' ? 'selected' : ''}>看韩语 → 想中文</option><option value="zh" ${dir === 'zh' ? 'selected' : ''}>看中文 → 说韩语</option></select></div>`}
-        <div class="check-row"><button class="btn primary big v-start">▶ 开始背（${due.length + newCount} 个）</button>
-          ${!uid && newCount === 0 && newPool.length ? '<button class="btn v-extra">今天的新词背完了，再背 20 个</button>' : ''}
-          ${unit ? `<a class="btn ghost" href="#vocab">全部单词</a><a class="btn ghost" href="#unit-${uid}">回到这课</a>` : ''}</div>
+        <div class="v-plan">
+          <div class="v-plan-n"><b>${due.length}</b><span>要复习</span></div>
+          <div class="v-plan-n"><b>${newCount}</b><span>${uid ? '本课新词' : '新词' + (lim <= 0 ? '（不限）' : '')}</span></div>
+          <button class="btn primary big v-start">▶ 开始背${due.length + newCount ? `（${due.length + newCount}）` : ''}</button>
+        </div>
+        <div class="v-sub muted small">${uid ? `这一课出现的 ${unitWords.length} 个词` : `今天已学新词 ${vNewToday()} 个 · 一共已学 ${learned.toLocaleString()} · 熟练 ${fluent.toLocaleString()}`}</div>
+        ${!uid && newCount === 0 && newPool.length ? '<div class="check-row"><button class="btn v-extra">今天的新词背完了，再背 20 个</button></div>' : ''}
+        ${uid ? `<div class="check-row"><a class="btn ghost" href="#vocab">全部单词</a><a class="btn ghost" href="#unit-${uid}">回到这课</a></div>` : `
+        <div class="v-decks-h muted small">背哪一类（新词从这里来）</div>
+        <div class="v-decks">${VSCOPES.map(deckCard).join('')}</div>
+        <details class="v-set"><summary>⚙ 每天新词 ${lim > 0 ? lim + ' 个' : '不限'} · ${dir === 'ko' ? '看韩语想中文' : '看中文说韩语'}</summary>
+          <div class="v-row"><span class="muted small">每天新词</span>
+            <input type="number" class="v-daily" min="0" max="9999" step="5" value="${lim > 0 ? lim : ''}" placeholder="不限" inputmode="numeric">
+            <div class="chips">${[10, 20, 50, 100, 200].map((n) => `<a class="chip ${lim === n ? 'on' : ''}" href="javascript:void 0" data-n="${n}">${n}</a>`).join('')}<a class="chip ${lim <= 0 ? 'on' : ''}" href="javascript:void 0" data-n="0">不限</a></div></div>
+          <div class="v-row"><span class="muted small">方向</span><select class="v-dir"><option value="ko" ${dir === 'ko' ? 'selected' : ''}>看韩语 → 想中文</option><option value="zh" ${dir === 'zh' ? 'selected' : ''}>看中文 → 说韩语</option></select></div>
+          <p class="muted small">到期要复习的词不受类别限制，全部都会出现。</p>
+        </details>`}
         <div class="v-session hidden"></div>
       </section>
       <h2 class="sec-title">总表</h2>
       <div class="v-filters">
         <input type="search" class="v-q" placeholder="搜韩语、中文或汉字">
-        <select class="v-f"><option value="all">全部</option>${VSCOPES.filter(([k]) => k !== 'all').map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select>
+        <select class="v-f">${[['all', '全部'], ['life', '生活常用'], ['book', 'TOPIK 书']].map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select>
         <select class="v-sf"><option value="">全部状态</option><option value="new">未学</option><option value="learning">学习中</option><option value="fluent">熟练</option></select>
         <select class="v-u"><option value="">按课程…</option>${UNITS.map((u) => `<option value="${u.id}" ${u.id === uid ? 'selected' : ''}>第 ${lessonNo(u)} 课 ${esc(u.title)}</option>`).join('')}</select>
       </div>
       <div class="chips v-index">${['全部', 'ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'].map((c, i) => `<a class="chip ${i ? '' : 'on'}" href="javascript:void 0" data-c="${i ? c : ''}">${c}</a>`).join('')}</div>
       <div class="v-bar"><span class="v-count muted small"></span><button class="btn small v-learn-list">▶ 背这个列表</button></div>
       <div class="v-list card"></div>
-      <p class="muted small">点任何一个词可以展开：看例句、直接标「不认识 / 模糊 / 认识」（算进学习记录），或者从这个词开始往下背。<br>学习词汇和词典例句来自国立国语院《韩国语基础词典》（krdict.korean.go.kr），CC BY-SA 2.0 KR。TOPIK 必备单词来自《完全掌握·新韩国语能力考试 TOPIK 必备单词》（金龙一著，华东理工大学出版社）正序版词汇表，仅供个人学习使用。</p>`);
+      <p class="muted small">点任何一个词可以展开：看例句、直接标「不认识 / 模糊 / 认识」（算进学习记录），或者从这个词开始往下背。<br>学习词汇和词典例句来自国立国语院《韩国语基础词典》（krdict.korean.go.kr），CC BY-SA 2.0 KR。TOPIK 书的单词来自《完全掌握·新韩国语能力考试 TOPIK 必备单词》（金龙一著，华东理工大学出版社）正序版词汇表，仅供个人学习使用。</p>`);
 
     // ── 设置 ──
-    $$('.vocab-today .chip[data-sc]', el).forEach((c) => (c.onclick = () => { S.settings.vocabScope = c.dataset.sc; save(); viewVocab(arg); }));
+    $$('.v-deck', el).forEach((c) => (c.onclick = () => { S.settings.vocabScope = c.dataset.sc; save(); viewVocab(arg); }));
     const setDaily = (n) => { S.settings.vocabDaily = Math.max(0, Math.floor(+n || 0)); save(); viewVocab(arg); };
-    $$('.vocab-today .chip[data-n]', el).forEach((c) => (c.onclick = () => setDaily(c.dataset.n)));
+    $$('.v-set .chip[data-n]', el).forEach((c) => (c.onclick = () => setDaily(c.dataset.n)));
     const vd = $('.v-daily', el); if (vd) vd.onchange = () => setDaily(vd.value === '' ? 0 : vd.value);
-    const vr = $('.v-dir', el); if (vr) vr.onchange = () => { S.settings.vocabDir = vr.value; save(); };
+    const vr = $('.v-dir', el); if (vr) vr.onchange = () => { S.settings.vocabDir = vr.value; save(); viewVocab(arg); };
 
     // ── 背词 ──
     const box = $('.v-session', el);
@@ -37299,6 +37350,7 @@ KSS.buildGradePrompt = function () {
       if (!queue.length) { toast('没有要背的词了 🎉'); return; }
       box.classList.remove('hidden'); $('.v-start', el).classList.add('hidden');
       const ex = $('.v-extra', el); if (ex) ex.classList.add('hidden');
+      $$('.v-decks, .v-decks-h, .v-set', el).forEach((x) => x.classList.add('hidden'));
       box.scrollIntoView({ behavior: 'smooth', block: 'start' });
       vSession(box, queue, () => viewVocab(arg), extraFrom);
     };
@@ -37317,7 +37369,7 @@ KSS.buildGradePrompt = function () {
     const rowEl = (w) => {
       const st = vState(w);
       const r = h(`<div class="v-item" data-ko="${esc(w.ko)}"><div class="v-line"><div class="v-main" role="button" tabindex="0">
-          <div class="v-head"><b lang="ko">${esc(w.ko)}</b>${w.hj ? `<span class="v-hj">${esc(w.hj)}</span>` : ''}${w.pos ? `<span class="v-pos">${esc(w.pos)}</span>` : ''}<span class="v-badge ${st}">${VSTATE[st]}</span></div>
+          <div class="v-head"><b lang="ko">${esc(w.ko)}</b>${w.hj ? `<span class="v-hj">${esc(w.hj)}</span>` : ''}${w.pos ? `<span class="v-pos">${esc(w.pos)}</span>` : ''}${w.src === 'book' ? '<span class="v-cat book">TOPIK 书</span>' : ''}${isLife(w) ? '<span class="v-cat life">生活常用</span>' : ''}<span class="v-badge ${st}">${VSTATE[st]}</span></div>
           <div class="zh">${esc(w.zh)}</div></div><div class="pb-acts"></div></div></div>`);
       $('.pb-acts', r).appendChild(speakBtn(w.ko, '▶'));
       $('.v-main', r).onclick = () => toggleDetail(r, w);
@@ -37328,7 +37380,7 @@ KSS.buildGradePrompt = function () {
       if (old) { old.remove(); r.classList.remove('open'); return; }
       r.classList.add('open');
       const d = h(`<div class="v-detail">
-        <div class="muted small">${[w.cat, vSrcTag(w), w.hj, w.pos].filter(Boolean).map(esc).join(' · ')}${w.units.length ? ` · 出现在 ${w.units.length} 课` : ''}</div>
+        <div class="muted small">${[w.hj, w.pos].filter(Boolean).map(esc).join(' · ')}${w.units.length ? `${w.hj || w.pos ? ' · ' : ''}出现在 ${w.units.length} 课` : ''}</div>
         ${w.zhDict ? `<div class="small">词典释义：${esc(w.zhDict)}</div>` : ''}
         ${vExHtml(w) || '<div class="muted small">还没有这个词的例句。</div>'}
         <div class="check-row v-acts"></div>
@@ -37350,8 +37402,9 @@ KSS.buildGradePrompt = function () {
       speak(w.ko);
     }
     const refreshStats = () => {
-      const b = $$('.v-stats b', el);
-      if (b.length === 5) { b[0].textContent = (uid ? vDue().filter((w) => w.units.includes(uid)) : vDue()).length; b[2].textContent = vNewToday(); b[3].textContent = Object.keys(S.vocab).length; b[4].textContent = VOCAB.filter((w) => vState(w) === 'fluent').length; }
+      const b = $$('.v-plan-n b', el), sub = $('.v-sub', el);
+      if (b.length) b[0].textContent = (uid ? vDue().filter((w) => w.units.includes(uid)) : vDue()).length;
+      if (sub && !uid) sub.textContent = `今天已学新词 ${vNewToday()} 个 · 一共已学 ${Object.keys(S.vocab).length.toLocaleString()} · 熟练 ${VOCAB.filter((w) => vState(w) === 'fluent').length.toLocaleString()}`;
     };
     const loadMore = () => {
       const frag = document.createDocumentFragment();
@@ -37365,8 +37418,8 @@ KSS.buildGradePrompt = function () {
       rows = VOCAB.filter((w) => (!uu || w.units.includes(uu)) && inScope(w, ff) && (!ss || vState(w) === ss) && (!init || vInit(w) === init)
         && (!qq || w.ko.includes(qq) || w.zh.includes(qq) || (w.hj && w.hj.includes(qq))));
       if (uu) rows.sort((a, b) => a.lv - b.lv);
-      $('.v-count', el).textContent = rows.length + ' 个';
-      $('.v-learn-list', el).textContent = `▶ 背这个列表（${rows.length} 个）`;
+      $('.v-count', el).textContent = rows.length.toLocaleString() + ' 个';
+      $('.v-learn-list', el).textContent = `▶ 背这个列表（${rows.length.toLocaleString()} 个）`;
       $('.v-learn-list', el).disabled = !rows.length;
       list.innerHTML = rows.length ? '' : '<div class="muted">没有找到。</div>';
       list.appendChild(sentinel);
@@ -37406,13 +37459,13 @@ KSS.buildGradePrompt = function () {
       }
       const w = queue[0];
       const isNew = !S.vocab[w.ko];
-      box.innerHTML = `<div class="prog">${done + 1} / ${total}${isNew ? ' · 新词' : ' · 复习'} · ${esc(w.cat)}<button class="btn small ghost v-quit">结束</button></div>
+      box.innerHTML = `<div class="prog">${done + 1} / ${total}${isNew ? ' · 新词' : ' · 复习'}${vSrcTag(w) ? ' · ' + esc(vSrcTag(w)) : ''}<button class="btn small ghost v-quit">结束</button></div>
         ${dir === 'ko' ? `<div class="v-front" lang="ko">${esc(w.ko)}</div>` : `<div class="v-front zh-front">${esc(w.zh)}</div>${w.pos ? `<div class="muted small center-row">${esc(w.pos)}</div>` : ''}`}
         <div class="slot"></div>
         <div class="v-back-side hidden">
           ${dir === 'ko' ? `<div class="v-mean">${esc(w.zh)}</div>` : `<div class="v-front" lang="ko">${esc(w.ko)}</div>`}
           ${w.zhDict ? `<div class="muted small center-row">词典释义：${esc(w.zhDict)}</div>` : ''}
-          <div class="muted small center-row">${[w.hj, w.pos, w.cat, vSrcTag(w)].filter(Boolean).map(esc).join(' · ')}</div>
+          <div class="muted small center-row">${[w.hj, w.pos].filter(Boolean).map(esc).join(' · ')}</div>
           ${vExHtml(w, true)}
           <div class="check-row center-row acts"></div>
         </div>
