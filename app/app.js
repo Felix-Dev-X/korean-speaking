@@ -1973,7 +1973,7 @@
     const showNext = (ok) => {
       foot.innerHTML = `<button class="btn primary big vf-main v-next">下一个 ›</button>`;
       $('.v-next', foot).onclick = next;
-      if (!ok && ui.extraFoot) ui.extraFoot();
+      if (ui.extraFoot) ui.extraFoot();   // 答完（对或错）都可以「早就会了，标熟练」
       ui.keys = (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); next(); } };
       if (ok && mode === 'choice') foot.firstChild.textContent = '下一个 ›（自动）';
     };
@@ -2027,8 +2027,8 @@
         if (mode !== 'listen' || !ok) speak(w.ko);
         showNext(ok);
         body.scrollTop = 0;
-        // 选择题快刷：答对 0.9 秒后自动下一个
-        if (ok && mode === 'choice') { const cur = af; setTimeout(() => { if (body.contains(cur)) next(); }, 900); }
+        // 选择题快刷：答对 1.5 秒后自动下一个（留时间点「标熟练」）
+        if (ok && mode === 'choice') { const cur = af; setTimeout(() => { if (body.contains(cur)) next(); }, 1500); }
       };
       $$('.v-opt', foot).forEach((bt) => (bt.onclick = () => pick(+bt.dataset.i)));
       $('.v-skip', foot).onclick = () => pick(-1);

@@ -52,7 +52,7 @@ export default async (t) => {
   t.check(texts.every((x) => !/[가-힣]/.test(x)), '选项里没有韩语提示');
   const leak = await p.evaluate(() => window.__kss.vocab().filter((w) => /[가-힣]/.test(window.__kss.vZhShort(w.zh))).map((w) => w.ko));
   t.check(!leak.length, `${leak.length} 个词的选项会露出韩语：${leak.slice(0, 8).join('、')}`);
-  await p.locator('.v-opt').nth(right).click(); await p.waitForTimeout(1200);
+  await p.locator('.v-opt').nth(right).click(); await p.waitForTimeout(1900);
   t.check((await p.locator('.vf-count').innerText()).startsWith('2 /'), '答对自动下一个');
 
   await run('listen'); await p.waitForSelector('.v-opt');
@@ -148,4 +148,25 @@ export default async (t) => {
   t.check(fl >= n0, '整个列表都变成熟练');
   await m.locator('.v-undo button').click(); await m.waitForTimeout(300);
   t.eq(parseInt((await m.locator('.v-count').innerText()).replace(/,/g, ''), 10), n0, '撤销后恢复');
+
+  // ── 每种模式：答题前、答对之后都能「早就会了，标熟练」 ──
+  for (const mode of ['card', 'listen', 'choice', 'dict']) {
+    await t.go(m, '#home'); await t.go(m, '#vocab'); await m.waitForSelector('.v-modes');
+    await m.locator(`.v-modes .chip[data-m="${mode}"]`).click(); await m.locator('.v-start').click(); await m.waitForTimeout(150);
+    t.check(await m.locator('.vf-known').isVisible(), `${mode}：答题前有「标熟练」`);
+    const ko = await m.locator('.vf').getAttribute('data-ko');
+    if (mode === 'card') await m.locator('.v-flip').click();
+    else if (mode === 'dict') { await m.fill('.v-in', ko); await m.locator('.v-ok').click(); }
+    else {
+      const zh = await m.evaluate((k) => window.__kss.vocab().find((w) => w.ko === k).zh, ko);
+      const texts = (await m.locator('.v-opt').allInnerTexts()).map((x) => x.replace(/^\d\s*/, ''));
+      await m.locator('.v-opt').nth(texts.findIndex((x) => zh.startsWith(x.split('；')[0]))).click();
+    }
+    await m.waitForTimeout(150);
+    t.check(await m.locator('.vf-known').isVisible(), `${mode}：答对之后还有「标熟练」`);
+    await m.locator('.vf-known').click(); await m.waitForTimeout(150);
+    const v = await m.evaluate((k) => window.__kss.state().vocab[k], ko);
+    t.check(v && v.ivl >= 90, `${mode}：答对后点「标熟练」生效`);
+    await m.keyboard.press('Escape'); await m.waitForTimeout(100);
+  }
 };

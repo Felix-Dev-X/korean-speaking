@@ -653,7 +653,7 @@ body.vf-open .toast { bottom: auto; top: calc(64px + env(safe-area-inset-top, 0p
     <a href="#more" data-t="more" class="tb-more"><i>☰</i><span>更多</span></a>
   </nav>
   <footer class="foot">每天开口 30 분 · 말이 늘어요 · 登录后进度自动同步到你的账户</footer>
-<script>window.KSS_ENV = 'artifact'; window.KSS_VERSION = "5835b29c · 2026-11-18";</script>
+<script>window.KSS_ENV = 'artifact'; window.KSS_VERSION = "a86e2420 · 2026-11-18";</script>
 <script>
 /* 出错提示：页面上的任何脚本错误都显示一条提示（而不是一片空白），
  * 可以一键复制错误信息（版本、页面、浏览器、出错位置）反馈给开发者。
@@ -38024,7 +38024,7 @@ KSS.buildGradePrompt = function () {
     const showNext = (ok) => {
       foot.innerHTML = `<button class="btn primary big vf-main v-next">下一个 ›</button>`;
       $('.v-next', foot).onclick = next;
-      if (!ok && ui.extraFoot) ui.extraFoot();
+      if (ui.extraFoot) ui.extraFoot();   // 答完（对或错）都可以「早就会了，标熟练」
       ui.keys = (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); next(); } };
       if (ok && mode === 'choice') foot.firstChild.textContent = '下一个 ›（自动）';
     };
@@ -38078,8 +38078,8 @@ KSS.buildGradePrompt = function () {
         if (mode !== 'listen' || !ok) speak(w.ko);
         showNext(ok);
         body.scrollTop = 0;
-        // 选择题快刷：答对 0.9 秒后自动下一个
-        if (ok && mode === 'choice') { const cur = af; setTimeout(() => { if (body.contains(cur)) next(); }, 900); }
+        // 选择题快刷：答对 1.5 秒后自动下一个（留时间点「标熟练」）
+        if (ok && mode === 'choice') { const cur = af; setTimeout(() => { if (body.contains(cur)) next(); }, 1500); }
       };
       $$('.v-opt', foot).forEach((bt) => (bt.onclick = () => pick(+bt.dataset.i)));
       $('.v-skip', foot).onclick = () => pick(-1);
