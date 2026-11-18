@@ -57,4 +57,34 @@ export default async (t) => {
   await q.waitForSelector('#gate');
   for (let i = 0; i < 6; i++) { await q.fill('#gate-user', user); await q.fill('#gate-pass', 'bad' + i); await q.locator('.gate-go').click(); await q.waitForTimeout(150); }
   t.check(/秒后再试/.test(await q.locator('.gate-err').innerText()), '连错 5 次后要等一会儿');
+
+  // ── 设置里修改密码：用 GitHub 令牌把新摘要提交到仓库（这里模拟 GitHub 接口） ──
+  const gateSrc = fs.readFileSync(path.join(ROOT, 'app', 'gate.js'), 'utf8');
+  let putBody = null, authHeader = '';
+  const c2 = await t.context({ noAuth: true, init: override });
+  await c2.route('https://api.github.com/**', async (route) => {
+    const req = route.request();
+    authHeader = req.headers().authorization || '';
+    if (req.method() === 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ sha: 'abc123', content: Buffer.from(gateSrc).toString('base64') }) });
+    putBody = JSON.parse(req.postData());
+    return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+  const s = await t.page('#prefs', { context: c2, noAuth: true });
+  await s.waitForSelector('#gate'); await s.fill('#gate-user', user); await s.fill('#gate-pass', pass); await s.locator('.gate-go').click();
+  await s.waitForSelector('.account'); await s.locator('.pw-change > summary').click();
+  const fillPw = async (o, n1, n2, tok) => { await s.fill('.pw-user', user); await s.fill('.pw-old', o); await s.fill('.pw-new', n1); await s.fill('.pw-new2', n2); if (tok != null && await s.locator('.gh-token').count()) await s.fill('.gh-token', tok); await s.locator('.pw-go').click(); await s.waitForTimeout(500); return s.locator('.pw-msg').innerText(); };
+  t.check(/不一样/.test(await fillPw(pass, 'new-pass-456', 'new-pass-457', 'tok')), '两次新密码不一样时提示');
+  t.check(/至少 8 位/.test(await fillPw(pass, 'short', 'short', 'tok')), '新密码太短时提示');
+  t.check(/当前密码不对/.test(await fillPw('wrong-old-pass', 'new-pass-456', 'new-pass-456', 'tok')), '当前密码不对时不能改');
+  t.eq(putBody, null, '验证没通过时不提交');
+  const ok = await fillPw(pass, 'new-pass-456', 'new-pass-456', 'github_pat_test');
+  t.check(/已保存到网站仓库/.test(ok), '修改成功提示：' + ok);
+  t.eq(authHeader, 'Bearer github_pat_test', '用令牌访问 GitHub');
+  const newSrc = putBody ? Buffer.from(putBody.content, 'base64').toString('utf8') : '';
+  const m = newSrc.match(/var CONFIG = \{ salt: '([0-9a-f]+)', iter: (\d+), hash: '([0-9a-f]{64})' \};/);
+  t.check(m && putBody.sha === 'abc123', '提交的是更新了 CONFIG 的 gate.js');
+  if (m) t.eq(crypto.pbkdf2Sync(user.toLowerCase() + '\n' + 'new-pass-456', m[1], +m[2], 32, 'sha256').toString('hex'), m[3], '新摘要对应新密码（换了新的盐）');
+  t.check(newSrc.replace(/var CONFIG = \{[^}]*\};/, '') === gateSrc.replace(/var CONFIG = \{[^}]*\};/, ''), 'gate.js 其他内容没变（中文注释没有乱码）');
+  t.check(!newSrc.includes('new-pass-456'), '提交的文件里没有明文密码');
+  t.check(await s.evaluate(() => localStorage.getItem('kss-gh-token')) === 'github_pat_test', '记住令牌');
 };

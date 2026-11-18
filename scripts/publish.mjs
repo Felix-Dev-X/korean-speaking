@@ -15,6 +15,18 @@ const dst = args.find((a) => !a.startsWith('--'));
 if (!dst || !fs.existsSync(path.join(dst, '.git'))) { console.error('用法：node scripts/publish.mjs <公开仓库的本地目录> [--full] [--push]'); process.exit(1); }
 const run = (cmd, a, opts = {}) => execFileSync(cmd, a, Object.assign({ cwd: src, stdio: 'inherit' }, opts));
 
+console.log('⓪ 同步公开仓库最新的登录密码（网页里改过密码的话，以公开仓库为准）');
+try { execFileSync('git', ['pull', '-q', '--ff-only'], { cwd: dst, stdio: 'inherit' }); } catch (e) { console.error('  公开仓库 git pull 失败，先处理好再发布'); process.exit(1); }
+{
+  const cfg = (f) => (fs.existsSync(f) ? (fs.readFileSync(f, 'utf8').match(/var CONFIG = \{[^}]*\};/) || [])[0] : null);
+  const srcGate = path.join(src, 'app', 'gate.js'), dstGate = path.join(dst, 'app', 'gate.js');
+  const a = cfg(srcGate), b = cfg(dstGate);
+  if (a && b && a !== b && !args.includes('--keep-local-password')) {
+    fs.writeFileSync(srcGate, fs.readFileSync(srcGate, 'utf8').replace(a, b));
+    console.log('  公开仓库里的密码和本地不同（可能在网页里改过），已采用公开仓库的。要用本地的密码覆盖，加 --keep-local-password');
+  }
+}
+
 console.log('① 打包和检查');
 run('node', ['scripts/stamp-assets.mjs']);
 run('node', ['scripts/build-artifact.mjs']);

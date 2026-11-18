@@ -34,5 +34,9 @@ self.addEventListener('fetch', (e) => {
     })));
     return;
   }
-  e.respondWith(fetch(req).catch(() => caches.match(req)));
+  // 不带版本号的文件（gate.js、图标……）：先联网取最新的并存一份，没网用存的
+  e.respondWith(fetch(req).then((r) => {
+    if (r.ok) { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
+    return r;
+  }).catch(() => caches.match(req, { ignoreSearch: true })));
 });

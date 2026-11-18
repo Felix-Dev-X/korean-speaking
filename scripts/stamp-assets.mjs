@@ -13,10 +13,13 @@ const file = path.join(app, 'index.html');
 let html = fs.readFileSync(file, 'utf8');
 let n = 0;
 const assets = [];
+// gate.js（登录门）不加版本号：网页里改密码时只改这一个文件，不用重新打包
+const NO_STAMP = new Set(['gate.js']);
+html = html.replace(/src="gate\.js\?v=[0-9a-f]+"/, 'src="gate.js"');
 const all = crypto.createHash('md5');
 html = html.replace(/(src|href)="([^"?#:]+\.(?:js|css))(?:\?v=[0-9a-f]+)?"/g, (m, attr, rel) => {
   const abs = path.join(app, rel);
-  if (!fs.existsSync(abs)) return m;
+  if (!fs.existsSync(abs) || NO_STAMP.has(rel)) return m;
   const buf = fs.readFileSync(abs);
   const v = crypto.createHash('md5').update(buf).digest('hex').slice(0, 8);
   all.update(rel + v);
@@ -30,7 +33,7 @@ if (/<meta name="app-version" content="[^"]*">/.test(html)) html = html.replace(
 else html = html.replace('</head>', `  ${meta}\n</head>`);
 fs.writeFileSync(file, html);
 
-const extra = ['manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'].filter((f) => fs.existsSync(path.join(app, f)));
+const extra = ['gate.js', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'].filter((f) => fs.existsSync(path.join(app, f)));
 const sw = fs.readFileSync(path.join(app, 'sw-template.js'), 'utf8')
   .replace("'__VERSION__'", JSON.stringify(version))
   .replace('__ASSETS__', JSON.stringify(assets.concat(extra), null, 2))

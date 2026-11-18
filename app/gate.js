@@ -1,12 +1,14 @@
 /* 登录门：只有输对管理员账号密码才能进入。
- * - 仓库里只保存密码的摘要（PBKDF2-SHA256），不保存明文。换密码：node scripts/set-password.mjs <账号> <密码>
+ * - 仓库里只保存密码的摘要（PBKDF2-SHA256），不保存明文。
+ * - 换密码：网页「设置 → 账号 → 修改密码」（用 GitHub 令牌把新摘要提交到仓库），或 node scripts/set-password.mjs <账号> <密码>
+ * - 这个文件不加版本号（index.html 里就是 gate.js），这样网页里改了密码、只改这一个文件也能马上生效
  * - 登录后记在这台设备上（勾掉「记住这台设备」则关掉浏览器就要重新登录）；「设置 → 关于 → 退出登录」
  * - 说明：这是纯前端网页，这个门只能挡住拿到网址直接打开的人，挡不住能读仓库文件的人。
  * 这个文件放在 <head> 里最先加载：没登录时页面内容一直是隐藏的（见 style.css 的 html:not(.kss-ok)）。 */
 (function () {
   'use strict';
   // ── 由 scripts/set-password.mjs 生成，不要手改 ──
-  var CONFIG = { salt: '7679dcb4e088f6f627b11a41bc1dfd4e', iter: 200000, hash: '9e13e9a0e7300bc961e9e68c2f59847ff056acdfc822458a9235158e76a4c2b6' };
+  var CONFIG = { salt: '3ecff8f2ed054d399e087ecedb28e399', iter: 200000, hash: '96029ff4bebaf7a086cf74e7b86218dc649841892abdfc79360f7c6f003ce32c' };
   // ── 生成结束 ──
   var C = window.KSS_GATE_OVERRIDE || CONFIG;   // 自动测试用测试账号覆盖
   var KEY = 'kss-auth';
@@ -14,21 +16,21 @@
   function stored() {
     try { return localStorage.getItem(KEY) || sessionStorage.getItem(KEY); } catch (e) { return null; }
   }
-  if (stored() === C.hash) { root.classList.add('kss-ok'); window.KSS_GATE = { logout: logout }; return; }
-
   function logout() {
     try { localStorage.removeItem(KEY); sessionStorage.removeItem(KEY); } catch (e) { /* ignore */ }
     location.reload();
   }
-  window.KSS_GATE = { logout: logout };
-
   function hex(buf) { return Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); }
-  function derive(user, pass) {
+  // 账号（不分大小写）+ 密码 → PBKDF2-SHA256 摘要。改密码时用新的盐
+  function derive(user, pass, salt, iter) {
     var enc = new TextEncoder();
     return crypto.subtle.importKey('raw', enc.encode(user.trim().toLowerCase() + '\n' + pass), 'PBKDF2', false, ['deriveBits'])
-      .then(function (k) { return crypto.subtle.deriveBits({ name: 'PBKDF2', salt: enc.encode(C.salt), iterations: C.iter, hash: 'SHA-256' }, k, 256); })
+      .then(function (k) { return crypto.subtle.deriveBits({ name: 'PBKDF2', salt: enc.encode(salt || C.salt), iterations: iter || C.iter, hash: 'SHA-256' }, k, 256); })
       .then(hex);
   }
+  // 设置页「修改密码」用
+  window.KSS_GATE = { logout: logout, derive: derive, config: C, key: KEY };
+  if (stored() === C.hash) { root.classList.add('kss-ok'); return; }
 
   function show() {
     var g = document.createElement('div');

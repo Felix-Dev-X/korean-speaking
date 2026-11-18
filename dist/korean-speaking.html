@@ -636,6 +636,12 @@ html:not(.kss-ok) body > *:not(#gate):not(#err-bar) { display: none !important; 
 .gate-go { min-height: 50px; border-radius: 12px; border: 0; background: var(--accent); color: #fff; font-size: 1.05rem; font-weight: 700; cursor: pointer; }
 .gate-go:disabled { opacity: .6; }
 
+.account input[type=password], .account input:not([type]) { width: 100%; }
+.pw-change { margin: 8px 0; }
+.pw-change summary { cursor: pointer; font-weight: 600; }
+.pw-msg { margin-top: 8px; line-height: 1.6; }
+.gh-help ol { padding-left: 1.3em; line-height: 1.7; }
+
 </style>
 <header class="hdr">
     <div class="hdr-in">
@@ -669,17 +675,19 @@ html:not(.kss-ok) body > *:not(#gate):not(#err-bar) { display: none !important; 
     <a href="#more" data-t="more" class="tb-more"><i>☰</i><span>更多</span></a>
   </nav>
   <footer class="foot">每天开口 30 분 · 말이 늘어요 · 登录后进度自动同步到你的账户</footer>
-<script>window.KSS_ENV = 'artifact'; window.KSS_VERSION = "a8102159 · 2026-11-18";</script>
+<script>window.KSS_ENV = 'artifact'; window.KSS_VERSION = "f03523eb · 2026-11-18";</script>
 <script>
 /* 登录门：只有输对管理员账号密码才能进入。
- * - 仓库里只保存密码的摘要（PBKDF2-SHA256），不保存明文。换密码：node scripts/set-password.mjs <账号> <密码>
+ * - 仓库里只保存密码的摘要（PBKDF2-SHA256），不保存明文。
+ * - 换密码：网页「设置 → 账号 → 修改密码」（用 GitHub 令牌把新摘要提交到仓库），或 node scripts/set-password.mjs <账号> <密码>
+ * - 这个文件不加版本号（index.html 里就是 gate.js），这样网页里改了密码、只改这一个文件也能马上生效
  * - 登录后记在这台设备上（勾掉「记住这台设备」则关掉浏览器就要重新登录）；「设置 → 关于 → 退出登录」
  * - 说明：这是纯前端网页，这个门只能挡住拿到网址直接打开的人，挡不住能读仓库文件的人。
  * 这个文件放在 <head> 里最先加载：没登录时页面内容一直是隐藏的（见 style.css 的 html:not(.kss-ok)）。 */
 (function () {
   'use strict';
   // ── 由 scripts/set-password.mjs 生成，不要手改 ──
-  var CONFIG = { salt: '7679dcb4e088f6f627b11a41bc1dfd4e', iter: 200000, hash: '9e13e9a0e7300bc961e9e68c2f59847ff056acdfc822458a9235158e76a4c2b6' };
+  var CONFIG = { salt: '3ecff8f2ed054d399e087ecedb28e399', iter: 200000, hash: '96029ff4bebaf7a086cf74e7b86218dc649841892abdfc79360f7c6f003ce32c' };
   // ── 生成结束 ──
   var C = window.KSS_GATE_OVERRIDE || CONFIG;   // 自动测试用测试账号覆盖
   var KEY = 'kss-auth';
@@ -687,21 +695,21 @@ html:not(.kss-ok) body > *:not(#gate):not(#err-bar) { display: none !important; 
   function stored() {
     try { return localStorage.getItem(KEY) || sessionStorage.getItem(KEY); } catch (e) { return null; }
   }
-  if (stored() === C.hash) { root.classList.add('kss-ok'); window.KSS_GATE = { logout: logout }; return; }
-
   function logout() {
     try { localStorage.removeItem(KEY); sessionStorage.removeItem(KEY); } catch (e) { /* ignore */ }
     location.reload();
   }
-  window.KSS_GATE = { logout: logout };
-
   function hex(buf) { return Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); }
-  function derive(user, pass) {
+  // 账号（不分大小写）+ 密码 → PBKDF2-SHA256 摘要。改密码时用新的盐
+  function derive(user, pass, salt, iter) {
     var enc = new TextEncoder();
     return crypto.subtle.importKey('raw', enc.encode(user.trim().toLowerCase() + '\n' + pass), 'PBKDF2', false, ['deriveBits'])
-      .then(function (k) { return crypto.subtle.deriveBits({ name: 'PBKDF2', salt: enc.encode(C.salt), iterations: C.iter, hash: 'SHA-256' }, k, 256); })
+      .then(function (k) { return crypto.subtle.deriveBits({ name: 'PBKDF2', salt: enc.encode(salt || C.salt), iterations: iter || C.iter, hash: 'SHA-256' }, k, 256); })
       .then(hex);
   }
+  // 设置页「修改密码」用
+  window.KSS_GATE = { logout: logout, derive: derive, config: C, key: KEY };
+  if (stored() === C.hash) { root.classList.add('kss-ok'); return; }
 
   function show() {
     var g = document.createElement('div');
@@ -39171,6 +39179,62 @@ KSS.buildGradePrompt = function () {
   const appVersion = () => (window.KSS_ERR ? window.KSS_ERR.version() : window.KSS_VERSION || '开发版');
   const errCount = () => (window.KSS_ERR ? window.KSS_ERR.recent().length : 0);
 
+  /* ── 修改登录密码 ──
+     网站是 GitHub Pages 上的静态网页：改密码 = 用 GitHub 令牌把新的密码摘要提交到仓库的 app/gate.js，
+     GitHub Pages 大约 1–2 分钟后更新，之后所有设备都要用新密码登录。 */
+  const GH_REPO = (() => {
+    const m = location.hostname.match(/^([^.]+)\.github\.io$/), seg = location.pathname.split('/').filter(Boolean)[0];
+    return m && seg ? `${m[1]}/${seg}` : 'Felix-Dev-X/korean-speaking';
+  })();
+  const GH_KEY = 'kss-gh-token';
+  const ghToken = () => { try { return localStorage.getItem(GH_KEY) || ''; } catch (e) { return ''; } };
+  const b64encode = (text) => { const bytes = new TextEncoder().encode(text); let bin = ''; bytes.forEach((b) => { bin += String.fromCharCode(b); }); return btoa(bin); };
+  const b64decode = (b64) => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g, '')), (c) => c.charCodeAt(0)));
+  function bindPwChange(el) {
+    const go = $('.pw-go', el); if (!go) return;
+    const msg = $('.pw-msg', el);
+    const say = (t, bad) => { msg.innerHTML = t; msg.className = 'pw-msg small ' + (bad ? 'bad-txt' : 'good-txt'); };
+    const gc = $('.gh-clear', el); if (gc) gc.onclick = () => { try { localStorage.removeItem(GH_KEY); } catch (e) { /* ignore */ } viewSettings(); setTimeout(() => { const d = $('.pw-change'); if (d) d.open = true; }, 0); };
+    go.onclick = async () => {
+      const G = window.KSS_GATE;
+      const user = $('.pw-user', el).value.trim(), old = $('.pw-old', el).value, nw = $('.pw-new', el).value, nw2 = $('.pw-new2', el).value;
+      const tokIn = $('.gh-token', el), token = tokIn ? tokIn.value.trim() : ghToken();
+      if (!G || !G.derive) return say('登录模块没有加载，请刷新页面。', true);
+      if (!user || !old || !nw) return say('请把账号、当前密码、新密码都填上。', true);
+      if (nw.length < 8) return say('新密码至少 8 位。', true);
+      if (nw !== nw2) return say('两次输入的新密码不一样。', true);
+      if (nw === old) return say('新密码和当前密码一样。', true);
+      if (!token) return say('需要 GitHub 令牌（见下面的说明）。', true);
+      go.disabled = true; say('正在检查当前密码……');
+      try {
+        if (await G.derive(user, old) !== G.config.hash) { say('账号或当前密码不对。', true); return; }
+        const salt = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+        const iter = G.config.iter || 200000;
+        const hash = await G.derive(user, nw, salt, iter);
+        say('正在保存到 GitHub……');
+        const api = `https://api.github.com/repos/${GH_REPO}/contents/app/gate.js`;
+        const headers = { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json' };
+        const r = await fetch(api, { headers });
+        if (r.status === 401) { say('GitHub 令牌无效或已过期，请重新生成。', true); return; }
+        if (!r.ok) { say(`读取仓库文件失败（${r.status}）。请确认令牌选了仓库 ${esc(GH_REPO)}，并有 Contents 读写权限。`, true); return; }
+        const file = await r.json();
+        const text = b64decode(file.content);
+        const line = `var CONFIG = { salt: '${salt}', iter: ${iter}, hash: '${hash}' };`;
+        const next = text.replace(/var CONFIG = \{[^}]*\};/, line);
+        if (next === text) { say('仓库里的 gate.js 格式不对，没有改动。', true); return; }
+        const put = await fetch(api, { method: 'PUT', headers, body: JSON.stringify({ message: '修改登录密码（在网页「设置 → 账号」里改的）', content: b64encode(next), sha: file.sha }) });
+        if (put.status === 401) { say('GitHub 令牌无效或已过期，请重新生成。', true); return; }
+        if (put.status === 403 || put.status === 404) { say('令牌没有写这个仓库的权限：Contents 要选「Read and write」。', true); return; }
+        if (!put.ok) { say(`保存失败（${put.status}），请稍后再试。`, true); return; }
+        if (tokIn && $('.gh-remember', el) && $('.gh-remember', el).checked) { try { localStorage.setItem(GH_KEY, token); } catch (e) { /* ignore */ } }
+        ['.pw-old', '.pw-new', '.pw-new2'].forEach((s) => { $(s, el).value = ''; });
+        say('✅ 新密码已保存到网站仓库。大约 1–2 分钟后网站更新，之后所有设备（包括这台）都要用新密码登录。<br>claude.ai 网页版的密码要告诉 Claude 重新发布后才会更新。');
+      } catch (err) {
+        say('连不上 GitHub，请检查网络后再试。', true);
+      } finally { go.disabled = false; }
+    };
+  }
+
   /* 导出进度文件。成功返回 true，并记下导出日期 */
   async function exportProgress() {
     const data = JSON.stringify(packState(S));
@@ -39275,11 +39339,35 @@ KSS.buildGradePrompt = function () {
         <div class="import-box"></div>
         ${preImport() ? `<p class="small muted">导入前的进度保存在本机（${esc(preImport().at)}）。<button class="btn small ghost undo-import">恢复导入前的进度</button></p>` : ''}
       </section>
+      <section class="card account"><h2>账号</h2>
+        <p class="small">管理员账号登录。换了密码以后，所有设备都要用新密码重新登录。</p>
+        <details class="pw-change"><summary>修改密码</summary>
+          ${ARTIFACT ? `<p class="small">claude.ai 网页版不能直接改密码：请在 GitHub 网页版的「设置 → 账号」里修改，然后告诉 Claude 重新发布这个链接（这个网页版的密码要重新打包才会更新）。</p>` : `
+          <label class="lbl" for="pw-user">账号</label><input type="text" id="pw-user" class="pw-user" value="admin" autocomplete="username" autocapitalize="none" spellcheck="false">
+          <label class="lbl" for="pw-old">当前密码</label><input id="pw-old" class="pw-old" type="password" autocomplete="current-password">
+          <label class="lbl" for="pw-new">新密码（至少 8 位）</label><input id="pw-new" class="pw-new" type="password" autocomplete="new-password">
+          <label class="lbl" for="pw-new2">再输一次新密码</label><input id="pw-new2" class="pw-new2" type="password" autocomplete="new-password">
+          <div class="gh-box">${ghToken() ? `<p class="small">✅ 这台设备已保存 GitHub 令牌 <button class="btn small ghost gh-clear">清除</button></p>` : `
+            <label class="lbl" for="gh-token">GitHub 令牌（第一次需要，用来把新密码保存到网站仓库）</label>
+            <input id="gh-token" class="gh-token" type="password" autocomplete="off" placeholder="github_pat_…">
+            <label class="switch small"><input type="checkbox" class="gh-remember" checked> 在这台设备上记住令牌</label>
+            <details class="small gh-help"><summary>GitHub 令牌是什么、怎么弄？</summary>
+              <p>网站是放在 GitHub 上的，没有自己的服务器。改密码 = 把新密码的摘要写进仓库里的 app/gate.js，需要你授权：</p>
+              <ol><li>电脑或手机浏览器登录 github.com，打开 Settings → Developer settings → Personal access tokens → <b>Fine-grained tokens</b> → Generate new token</li>
+                <li>Repository access 选 <b>Only select repositories</b> → 选 <code>${esc(GH_REPO)}</code></li>
+                <li>Permissions → Repository permissions → <b>Contents</b> 选 <b>Read and write</b>，其他不用动</li>
+                <li>生成后复制（github_pat_ 开头），粘贴到上面</li></ol>
+              <p>令牌只保存在这台设备的浏览器里，只能改这一个仓库的文件。</p></details>`}</div>
+          <div class="check-row"><button class="btn primary pw-go">修改密码</button></div>
+          <div class="pw-msg small"></div>`}
+        </details>
+        <p class="small"><button class="btn small ghost logout">退出登录</button> <span class="muted">退出后需要重新输入账号密码，学习进度不会丢</span></p>
+      </section>
       <section class="card"><h2>关于</h2>
         <p class="small">版本：<code>${esc(appVersion())}</code>${ARTIFACT ? '（claude.ai 网页版）' : STANDALONE ? '（主屏幕 App）' : ''}${!ARTIFACT && 'serviceWorker' in navigator ? ` · 离线可用：${navigator.serviceWorker.controller ? '✅' : '第一次打开后可用'}` : ''}</p>
-        <p class="small"><button class="btn small ghost logout">退出登录</button> <span class="muted">退出后需要重新输入账号密码</span></p>
         ${errCount() ? `<p class="small">最近有 ${errCount()} 条错误记录。<button class="btn small ghost copy-errs">复制错误信息</button><button class="btn small ghost clear-errs">清除记录</button></p>` : '<p class="small muted">没有错误记录。</p>'}
       </section>`);
+    bindPwChange(el);
     const lo = $('.logout', el);
     if (lo) lo.onclick = () => confirmInline(lo.closest('p'), '确定退出登录吗？学习进度不会丢。', '退出登录', () => { if (window.KSS_GATE) window.KSS_GATE.logout(); });
     const ce = $('.copy-errs', el); if (ce) ce.onclick = () => copyText(window.KSS_ERR.recent().join('\n\n────────\n\n'));

@@ -631,3 +631,9 @@ html:not(.kss-ok) body > *:not(#gate):not(#err-bar) { display: none !important; 
 .gate-err { color: var(--bad); font-size: .9rem; min-height: 1.4em; margin: 8px 0 4px; }
 .gate-go { min-height: 50px; border-radius: 12px; border: 0; background: var(--accent); color: #fff; font-size: 1.05rem; font-weight: 700; cursor: pointer; }
 .gate-go:disabled { opacity: .6; }
+
+.account input[type=password], .account input:not([type]) { width: 100%; }
+.pw-change { margin: 8px 0; }
+.pw-change summary { cursor: pointer; font-weight: 600; }
+.pw-msg { margin-top: 8px; line-height: 1.6; }
+.gh-help ol { padding-left: 1.3em; line-height: 1.7; }
