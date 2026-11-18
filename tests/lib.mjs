@@ -56,6 +56,7 @@ export function makeT(browser, base, name) {
     async context(opts = {}) {
       const ctx = await browser.newContext(Object.assign({ viewport: { width: 375, height: 800 } }, opts.device ? devices[opts.device] : {}, opts.ctx || {}));
       contexts.push(ctx);
+      if (!opts.onboarding) await ctx.addInitScript(() => { try { localStorage.setItem('kss-no-onboarding', '1'); } catch (e) { /* ignore */ } });
       if (!opts.noAuth) await ctx.addInitScript((h) => { try { localStorage.setItem('kss-auth', h); } catch (e) { /* ignore */ } }, AUTH);
       await ctx.addInitScript((seed) => {
         // 测试里不真的发音

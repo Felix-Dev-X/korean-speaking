@@ -265,7 +265,7 @@
       CLOUD.ready = true; CLOUD.state = 'on';
       // 本机和账户里的进度合并：哪边都不丢
       const hadLocal = hasProgress();
-      if (absorb(remote)) { backfillDialogueCards(); toast(hadLocal ? '已和你账户里的进度合并' : '已从你的账户同步学习进度'); route(); }
+      if (absorb(remote)) { backfillDialogueCards(); toast(hadLocal ? '已和你账户里的进度合并' : '已从你的账户同步学习进度'); softRoute(); }
       if (!remote || remote.json !== JSON.stringify(packState(S))) { CLOUD.dirty = true; cloudFlush(); } else CLOUD.lastOk = Date.now();
     } catch (e) { CLOUD.state = 'off'; CLOUD.ready = false; }
   }
@@ -273,7 +273,7 @@
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') { cloudFlush(); return; }
     if (!CLOUD.ready || CLOUD.writing) return;
-    cloudRead().then((r) => { if (absorb(r)) { const nm = (location.hash.match(/^#\/?([a-z]*)/) || [])[1] || ''; if (nm === '' || nm === 'home') route(); else updateTabBadges(); } }).catch(() => {});
+    cloudRead().then((r) => { if (absorb(r)) { const nm = (location.hash.match(/^#\/?([a-z]*)/) || [])[1] || ''; if (nm === '' || nm === 'home') softRoute(); else updateTabBadges(); } }).catch(() => {});
   });
   function save() { S.updatedAt = Date.now(); saveLocal(); cloudSoon(); }
 
@@ -340,9 +340,22 @@
     });
   }
   function stopSpeak() { if ('speechSynthesis' in window) speechSynthesis.cancel(); speaking = false; }
+  // ▶ 播放；5 秒内再点一下同一个 ▶ = 0.7 倍速慢放（按钮短暂变成 🐢）
   function speakBtn(text, label, rate) {
-    const b = h(`<button class="btn icon" title="${rate && rate < 1 ? '慢速播放' : '播放'}">${label || '▶'}</button>`);
-    b.onclick = (e) => { e.stopPropagation(); speak(text, rate); logRep(0); };
+    const b = h(`<button class="btn icon" title="${rate && rate < 1 ? '慢速播放' : '播放（再点一下 = 慢速）'}">${label || '▶'}</button>`);
+    let last = 0, orig = null, tmr = null;
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const now = Date.now(), slow = !(rate && rate < 1) && now - last < 5000;
+      last = slow ? 0 : now;
+      speak(text, slow ? 0.7 : rate); logRep(0);
+      if (slow) {
+        if (orig == null) orig = b.innerHTML;
+        b.innerHTML = orig.indexOf('▶') >= 0 ? orig.replace('▶', '🐢') : '🐢';
+        b.classList.add('slow-on');
+        clearTimeout(tmr); tmr = setTimeout(() => { b.innerHTML = orig; b.classList.remove('slow-on'); }, 1800);
+      }
+    };
     return b;
   }
 
@@ -842,6 +855,8 @@
       <div class="hub">${PRACTICE().map(([href, ic, t, d]) => `<a class="hub-item card" href="${href}"><i>${ic}</i><span><b>${t}</b><small>${esc(d)}</small></span></a>`).join('')}</div>
       <div class="check-row"><a class="btn ghost" href="#search">🔍 搜索全部句子和单词</a></div>`);
   }
+  // 后台数据更新后刷新当前页面；正在全屏练习（背词、复习、新手引导）时不打断
+  function softRoute() { if (document.body.classList.contains('vf-open')) updateTabBadges(); else route(); }
   function route() {
     cleanups.forEach((f) => { try { f(); } catch (e) { /* ignore */ } });
     cleanups = [];
@@ -862,6 +877,7 @@
       return;
     }
     closeMore();
+    rememberPlace(name, arg);
     try { (R[name] || viewHome).call(null, arg); }
     catch (err) {
       const text = window.KSS_ERR ? window.KSS_ERR.log(err.message, err.stack) : String(err);
@@ -907,10 +923,12 @@
         <p class="muted">${esc(info.type === 'unit' ? info.unit.goal : info.week.goal)}</p>
         <div class="row">
           <a class="btn primary big" href="#day-${n}">开始今天的训练 →</a>
+          ${continueHtml('#day-' + n)}
           ${due ? `<a class="btn big" href="#review">复习到期卡片（${due}）</a>` : ''}
           ${vocabTodayCount() ? `<a class="btn big" href="#vocab">背单词（${vocabTodayCount()}）</a>` : ''}
         </div>
       </section>
+      ${resumeHtml()}
       ${backupCardHtml()}
       <section class="stats">
         <div class="stat"><b>${streak()}</b><span>连续天数</span></div>
@@ -952,6 +970,8 @@
       </section>
     `);
     bindBackupCard(el);
+    bindResume(el);
+    bindContinue(el);
   }
 
   /* ═════════════ 课程列表 ═════════════ */
@@ -1425,12 +1445,14 @@
     const what = mode === 'free' ? '张加练' : mode === 'favgo' ? '句收藏' : '张到期';
     const el = setView(`<h1 class="page-title">复习 <small>${mode === 'free' ? '自由加练' : mode === 'favgo' ? '练收藏的句子' : '到期卡片'}</small></h1>
       ${reviewTabs(mode === 'favgo' ? 'fav' : mode || '')}
+      ${mode ? '' : resumeHtml('r')}
       <section class="card review-start">
         ${queue.length ? `<div class="v-plan"><div class="v-plan-n"><b>${queue.length}</b><span>${what}</span></div><button class="btn primary big rv-start">▶ 开始复习</button></div>`
           : `<h3>今天没有到期的卡片 🎉</h3><p class="muted">${total ? '明天再来。想多练的话：' : '先去完成第一课，句子会自动加入复习库。也可以直接加练：'}</p>
           <div class="check-row"><a class="btn" href="#review-free">自由加练 15 张</a>${favIds().length ? '<a class="btn" href="#review-favgo">练收藏的句子</a>' : ''}<a class="btn ghost" href="#home">回首页</a></div>`}
       </section>
       <div class="tip card">每张卡片会随着你练的次数<b>逐步撤掉提示</b>：① 跟读（看着韩语说）→ ② 回想（只看中文）→ ③ 实战（只看对方说了什么，或者 5 秒内说出来）。选「忘了」会退回 ① 重新开始。复习库共 ${total} 句：完成的课、☆ 收藏的、平时说不好的（🔁）都在这里。</div>`);
+    bindResume(el);
     const st = $('.rv-start', el);
     if (st) st.onclick = () => rvSession(queue.slice(), mode);
     // 「自由加练」「练收藏」是点了就要练的：直接进入
@@ -1438,15 +1460,16 @@
   }
 
   /* 复习句子：全屏专注模式。按钮在底部：显示答案 → 忘了 / 卡了 / 秒出 */
-  function rvSession(queue, mode) {
+  function rvSession(queue, mode, resume) {
     const F = focusShell(mode === 'free' ? '自由加练' : mode === 'favgo' ? '收藏的句子' : '🔁 复习', '复习句子');
     const { ov, body, foot, ui, close } = F;
-    let done = 0;
+    let done = resume ? resume.done || 0 : 0;
     const back = () => { close(); if (location.hash === '#review') viewReview(); else location.hash = '#review'; };
-    ui.onEsc = () => { if (!done) back(); else { queue.length = 0; render(); } };
+    ui.onEsc = () => { saveResume('r', null); if (!done) back(); else { queue.length = 0; render(); } };
     function render() {
       stopListen();
       body.scrollTop = 0; ui.keys = null;
+      saveResume('r', queue.length ? { mode, queue: queue.slice(), done, at: Date.now() } : null);
       if (!queue.length) {
         F.setProg(1, `本轮完成 ${done} 张`); ov.dataset.id = '';
         body.innerHTML = `<div class="vf-card vf-done"><div class="vf-big">🎉</div><h2>${mode === 'free' ? '加练' : '复习'}了 ${done} 张！</h2>
@@ -1481,6 +1504,8 @@
       ans.appendChild(speakBtn(c.ko, '▶'));
       const grade = (g) => {
         stopListen();
+        const st = { q: queue.slice(), done, v: S.srs[id] ? Object.assign({}, S.srs[id]) : null };
+        F.pushUndo(() => { queue.length = 0; queue.push(...st.q); done = st.done; if (mode !== 'free') { if (st.v) S.srs[id] = st.v; else delete S.srs[id]; save(); } render(); });
         if (mode !== 'free') rateCard(id, g);
         queue.shift(); done++;
         if (g === 0) queue.push(id);
@@ -1625,7 +1650,7 @@
     } else if (name === 'vocab') {
       if (!document.body.classList.contains('vf-open') && !$('#app .v-item.open')) route();
       else { const n = $('#app .v-loading'); if (n) n.remove(); }
-    } else if (name === '' || name === 'home') route();
+    } else if (name === '' || name === 'home') softRoute();
   }
   // 词表只分两类：「TOPIK 书」和「生活常用」（= 课程里出现过的词 + 生活词汇）；其余的词不分类，只在「全部」里
   const isLife = (w) => w.units.length > 0 || !!w.daily;
@@ -1691,6 +1716,7 @@
         <small>已学 ${l.toLocaleString()} · 熟练 ${fl.toLocaleString()}${sc === k ? ' · <em>正在背</em>' : ''}</small></a>`;
     };
     const el = setView(`<h1 class="page-title">${unit ? `第 ${lessonNo(unit)} 课的单词` : '单词'} <small>${unit ? esc(unit.title) + ' · ' + unitWords.length + ' 个' : '共 ' + VOCAB.length.toLocaleString() + ' 个'}</small></h1>
+      ${uid ? '' : resumeHtml('v')}
       <section class="card vocab-today">
         <div class="v-plan">
           <div class="v-plan-n"><b>${due.length}</b><span>要复习</span></div>
@@ -1724,6 +1750,7 @@
       <div class="v-list card"></div>
       <p class="muted small">点任何一个词可以展开：看例句、直接标「不认识 / 模糊 / 认识」（算进学习记录），或者从这个词开始往下背。<br>学习词汇和词典例句来自国立国语院《韩国语基础词典》（krdict.korean.go.kr），CC BY-SA 2.0 KR。TOPIK 书的单词来自《完全掌握·新韩国语能力考试 TOPIK 必备单词》（金龙一著，华东理工大学出版社）正序版词汇表，仅供个人学习使用。</p>`);
 
+    bindResume(el);
     // ── 设置 ──
     $$('.v-modes .chip', el).forEach((c) => (c.onclick = () => { S.settings.vocabMode = c.dataset.m; save(); $$('.v-modes .chip', el).forEach((x) => x.classList.toggle('on', x === c)); toast(VMODE_TIP[c.dataset.m]); startLabel(); }));
     $$('.v-deck', el).forEach((c) => (c.onclick = () => { S.settings.vocabScope = c.dataset.sc; save(); viewVocab(arg); }));
@@ -1918,6 +1945,144 @@
     const a = vNorm(ans), k = vNorm(ko);
     return [...k].map((ch, i) => (a[i] === ch ? esc(ch) : `<mark>${esc(ch)}</mark>`)).join('');
   }
+  /* ── 新手引导：新账号第一次打开时（没有任何学习记录）走一遍：怎么练 → 听发音 → 试说话 ──
+     「设置 → 关于」里可以重新打开。 */
+  const ONBOARD_KEY = () => STORE_KEY + '-onboarded';
+  function needOnboarding() {
+    try {
+      if (localStorage.getItem('kss-no-onboarding') || localStorage.getItem(ONBOARD_KEY())) return false;
+      if (hasProgress()) { localStorage.setItem(ONBOARD_KEY(), '1'); return false; }
+    } catch (e) { return false; }
+    return true;
+  }
+  function onboarding() {
+    const F = focusShell('新手引导', '新手引导');
+    const { body, foot, ui, close } = F;
+    const N = 4;
+    let step = 0;
+    const finish = (hash) => { try { localStorage.setItem(ONBOARD_KEY(), '1'); } catch (e) { /* ignore */ } close(); if (hash) location.hash = hash; };
+    ui.onEsc = () => finish();
+    const KB_MODE = !hasSR || IOS;   // iPhone / claude.ai：用键盘语音输入（和练习时一样）
+    function render() {
+      stopListen(); body.scrollTop = 0; ui.keys = null;
+      F.setProg(step / (N - 1), `第 ${step + 1} / ${N} 步`);
+      const next = () => { step++; render(); };
+      if (step === 0) {
+        body.innerHTML = `<div class="vf-card ob">
+          <div class="vf-big">👋</div><h2>欢迎来练韩语口语！</h2>
+          <p>每天 30–60 分钟，按这个顺序练：</p>
+          <ol class="ob-list"><li><b>今天的课</b>：句块跟读 → 对话 → 快速反应 → 口语任务</li>
+            <li><b>复习</b>：到期的句子一张张过（全屏，按钮都在屏幕下方）</li>
+            <li><b>背单词</b>：会的词可以直接标熟练，只学不会的</li></ol>
+          <p class="ob-key">最重要的一条：<b>每一句都要开口说出来</b>，光看不练没用。</p>
+          <div class="ob-tips small"><b>小技巧</b><br>▶ 播放，<b>再点一下 = 慢速</b>（🐢）<br>背词、复习点错了，点顶部的「↶ 撤销」<br>中途离开没关系，回来首页会提示「继续」</div></div>`;
+        foot.innerHTML = `<button class="btn primary big vf-main ob-next">下一步：听发音 ›</button><button class="vf-known ob-skip">跳过引导</button>`;
+        $('.ob-next', foot).onclick = next; $('.ob-skip', foot).onclick = () => finish();
+        ui.keys = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); next(); } };
+      } else if (step === 1) {
+        body.innerHTML = `<div class="vf-card ob">
+          <div class="vf-big">🔊</div><h2>先听一句</h2>
+          <p>点下面的按钮，应该听到一句韩语：「안녕하세요. 만나서 반가워요.」</p>
+          <div class="center-row"><button class="btn big vf-play ob-play">▶ 播放</button></div>
+          <div class="ob-help hidden small">
+            <b>没有声音的话：</b><ol>
+              <li>iPhone：看看侧边的<b>静音开关</b>是不是打开了（橙色），把音量调大</li>
+              <li>在「设置 → 语音」里点「试听」，换一个韩语发音人试试</li>
+              <li>系统里没有韩语语音：iPhone 设置 → 辅助功能 → 朗读内容 → 声音 → 韩语，下载一个</li></ol></div></div>`;
+        foot.innerHTML = `<div class="vf-row"><button class="btn ob-no">🔇 没声音</button><button class="btn primary ob-yes">✅ 听到了</button></div>`;
+        const play = () => speak('안녕하세요. 만나서 반가워요.');
+        $('.ob-play', body).onclick = play; setTimeout(play, 300);
+        $('.ob-no', foot).onclick = () => { $('.ob-help', body).classList.remove('hidden'); $('.ob-no', foot).textContent = '先跳过 ›'; $('.ob-no', foot).onclick = next; };
+        $('.ob-yes', foot).onclick = next;
+      } else if (step === 2) {
+        body.innerHTML = `<div class="vf-card ob vf-top-align">
+          <div class="vf-big">🎤</div><h2>试着说一句</h2>
+          ${KB_MODE ? `<p>在 iPhone 上，用<b>键盘上的 🎤（听写）</b>说韩语最准。第一次要先准备好：</p>
+            <ol class="ob-list small"><li>iPhone 设置 → 通用 → 键盘 → 键盘 → 添加新键盘 → <b>韩语</b></li>
+              <li>同一页打开<b>「启用听写」</b></li></ol>
+            <p>然后点下面的「🎤 说出来」→ 键盘出来后点 🌐 切到韩语键盘 → 按键盘上的 🎤 → 说「<b lang="ko">안녕하세요</b>」</p>`
+          : '<p>点下面的 🎤，允许使用麦克风，然后说「<b lang="ko">안녕하세요</b>」。</p>'}
+          <div class="slot"></div><div class="ob-res"></div></div>`;
+        foot.innerHTML = `<div class="vf-row"><button class="btn ob-skip2">先跳过 ›</button><button class="btn primary ob-ok hidden">下一步 ›</button></div>`;
+        const res = $('.ob-res', body);
+        $('.slot', body).appendChild(speakCheck('안녕하세요', { noWeak: true, onScore: (sc) => {
+          res.innerHTML = sc >= 60 ? `<p class="good-txt">✅ 识别成功（${sc} 分）！以后练习时都这样说。</p>` : `<p class="bad-txt">识别到了，但不太像（${sc} 分）。再说一次试试，说慢一点、清楚一点。</p>`;
+          if (sc >= 60) { $('.ob-ok', foot).classList.remove('hidden'); $('.ob-skip2', foot).classList.add('hidden'); }
+        } }));
+        $('.ob-skip2', foot).onclick = next; $('.ob-ok', foot).onclick = next;
+      } else {
+        const n = currentDay();
+        body.innerHTML = `<div class="vf-card ob vf-done"><div class="vf-big">🎉</div><h2>准备好了！</h2>
+          <p>从第 ${n} 天开始吧。每天练完，首页的日历会打上勾。</p>
+          <p class="muted small">这个引导以后可以在「设置 → 关于」里重新打开。</p></div>`;
+        foot.innerHTML = `<button class="btn primary big vf-main ob-start">▶ 开始今天的训练</button><button class="vf-known ob-home">先随便看看</button>`;
+        $('.ob-start', foot).onclick = () => finish('#day-' + n);
+        $('.ob-home', foot).onclick = () => finish();
+        ui.keys = (e) => { if (e.key === 'Enter') { e.preventDefault(); finish('#day-' + n); } };
+      }
+    }
+    render();
+  }
+
+  /* ── 一键继续上次：记下最近打开的课 / 情景 / 短文 / 百问 / 听力 / 周测（只存在这台设备） ── */
+  const LAST_KEY = () => STORE_KEY + '-last';
+  function placeTitle(name, arg) {
+    try {
+      if (name === 'unit') { const u = unitById(arg); return u && `第 ${lessonNo(u)} 课 · ${u.title}`; }
+      if (name === 'day') { const n = +arg, di = dayInfo(n); return di && (di.type === 'unit' ? `第 ${n} 天 · ${di.unit.title}` : `第 ${n} 天 · ${di.label || '复习'}`); }
+      if (name === 'recap') { const u = unitById(arg); return u && `回炉 · ${u.title}`; }
+      if (name === 'scene') { const sc = SCENES.find((x) => x.id === arg); return sc && `情景 ${sceneNo(sc)} · ${sc.title}`; }
+      if (name === 'shadow' && arg) { const ps = PASSAGES.find((x) => x.id === arg); return ps && `短文 ${passageNo(ps)} · ${ps.title}`; }
+      if (name === 'qa' && arg != null) { const c = (K.qa || [])[+arg]; return c && `百问 · ${c.cat}`; }
+      if (name === 'drills' && /^comp-/.test(arg || '')) { const d = LISTENING.find((x) => x.id === arg.slice(5)); return d && `听力 · ${d.title}`; }
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+  function rememberPlace(name, arg) {
+    const title = placeTitle(name, arg);
+    if (!title) return;
+    try { localStorage.setItem(LAST_KEY(), JSON.stringify({ hash: '#' + name + '-' + arg, title, at: Date.now() })); } catch (e) { /* ignore */ }
+  }
+  function lastPlace() { try { const v = JSON.parse(localStorage.getItem(LAST_KEY()) || 'null'); return v && Date.now() - v.at < 14 * 864e5 ? v : null; } catch (e) { return null; } }
+  function continueHtml(todayHash) {
+    const l = lastPlace();
+    if (!l || l.hash === todayHash) return '';
+    return `<a class="btn big continue-btn" href="${esc(l.hash)}">↩ 继续上次：${esc(l.title)}</a>`;
+  }
+  function bindContinue() { /* 链接本身就能跳转，留着以后加统计 */ }
+
+  /* ── 中断续练：背词 / 复习没做完就离开时，记下还剩哪些（只存在这台设备，12 小时内有效） ── */
+  const RESUME_KEY = (k) => STORE_KEY + '-resume-' + k;
+  function saveResume(k, v) { try { if (v) localStorage.setItem(RESUME_KEY(k), JSON.stringify(v)); else localStorage.removeItem(RESUME_KEY(k)); } catch (e) { /* ignore */ } }
+  function getResume(k) {
+    try { const v = JSON.parse(localStorage.getItem(RESUME_KEY(k)) || 'null'); return v && v.queue && v.queue.length && Date.now() - v.at < 12 * 3600e3 ? v : null; } catch (e) { return null; }
+  }
+  function resumeHtml(only) {
+    const v = getResume('v'), r = getResume('r');
+    const MODE_NAME = Object.fromEntries(VMODES);
+    const rows = [];
+    if (v && only !== 'r') rows.push(`<div class="resume-row"><span>⏸ 单词没背完：还剩 <b>${v.queue.length}</b> 个（${esc(MODE_NAME[v.mode] || '')}）</span><button class="btn primary small rs-v">继续</button><button class="btn ghost small rs-v-x">不要了</button></div>`);
+    if (r && only !== 'v') rows.push(`<div class="resume-row"><span>⏸ 复习没做完：还剩 <b>${r.queue.length}</b> 张</span><button class="btn primary small rs-r">继续</button><button class="btn ghost small rs-r-x">不要了</button></div>`);
+    return rows.length ? `<section class="card resume-card">${rows.join('')}</section>` : '';
+  }
+  function bindResume(el) {
+    const rv = $('.rs-v', el), rr = $('.rs-r', el);
+    if (rv) rv.onclick = async () => {
+      const v = getResume('v'); if (!v) return;
+      rv.disabled = true;
+      await loadFullVocab();
+      const by = new Map(VOCAB.map((w) => [w.ko, w]));
+      const q = v.queue.map((k) => by.get(k)).filter(Boolean);
+      if (!q.length) { saveResume('v', null); route(); return; }
+      if (v.mode !== vMode()) { S.settings.vocabMode = v.mode; save(); }
+      vSession(q, () => { if (location.hash === '#vocab') viewVocab(); else location.hash = '#vocab'; }, null,
+        { done: v.done, total: v.total, known: v.known, unknown: (v.unknown || []).map((k) => by.get(k)).filter(Boolean) });
+    };
+    if (rr) rr.onclick = () => { const r = getResume('r'); if (r) rvSession(r.queue.filter((id) => cardById(id)), r.mode, r); };
+    const vx = $('.rs-v-x', el); if (vx) vx.onclick = () => { saveResume('v', null); route(); };
+    const rx = $('.rs-r-x', el); if (rx) rx.onclick = () => { saveResume('r', null); route(); };
+  }
+
   /* ── 全屏专注模式的外壳（背单词、复习句子共用）──
      顶部：✕ + 进度条 + 模式名；中间 body：内容（只在这里滚动）；底部 foot：按钮固定在大拇指位置。
      ui.keys：当前这一步的键盘处理；ui.onEsc：点 ✕ 或按 Esc。离开页面时自动关闭。 */
@@ -1925,6 +2090,7 @@
     const ov = h(`<div class="vf" role="dialog" aria-label="${esc(aria || label)}">
         <div class="vf-head"><button class="vf-x" aria-label="结束">✕</button>
           <div class="vf-prog"><div class="vf-bar"><i></i></div><div class="prog vf-count"></div></div>
+          <button class="vf-undo hidden" title="撤销上一个（电脑：Z）">↶ 撤销</button>
           <span class="vf-mode">${esc(label || '')}</span></div>
         <div class="vf-body"></div>
         <div class="vf-foot"></div></div>`);
@@ -1936,6 +2102,7 @@
     const onKey = (e) => {
       if (e.key === 'Escape') { e.preventDefault(); if (ui.onEsc) ui.onEsc(); return; }
       if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
+      if (ui.undoKey && ui.undoKey(e)) return;
       if (ui.keys) ui.keys(e);
     };
     const close = () => {
@@ -1947,11 +2114,20 @@
     onLeave(close);
     document.addEventListener('keydown', onKey);
     $('.vf-x', ov).onclick = () => { if (ui.onEsc) ui.onEsc(); };
+    // 撤销：push(恢复函数)；点「↶ 撤销」或按 Z 执行最近一个
+    const undos = [];
+    const undoBtn = $('.vf-undo', ov);
+    const syncUndo = () => undoBtn.classList.toggle('hidden', !undos.length);
+    const undo = () => { const fn = undos.pop(); syncUndo(); if (fn) { stopSpeak(); fn(); toast('已撤销上一个'); } };
+    undoBtn.onclick = undo;
+    ui.undoKey = (e) => { if ((e.key === 'z' || e.key === 'Z') && undos.length) { e.preventDefault(); undo(); return true; } return false; };
+    const pushUndo = (fn) => { undos.push(fn); if (undos.length > 50) undos.shift(); syncUndo(); };
+    const clearUndo = () => { undos.length = 0; syncUndo(); };
     const setProg = (frac, text) => {
       $('.vf-bar i', ov).style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + '%';
       $('.vf-count', ov).textContent = text;
     };
-    return { ov, body, foot, ui, close, setProg, isClosed: () => closed };
+    return { ov, body, foot, ui, close, setProg, isClosed: () => closed, pushUndo, clearUndo };
   }
 
   /* ── 背词全屏专注模式 ──
@@ -1967,7 +2143,7 @@
   function vAnswerActs(el, w) {
     const acts = $('.acts', el);
     acts.appendChild(speakBtn(w.ko, '▶ 单词'));
-    if (vExKo(w)) acts.appendChild(speakBtn(vExKo(w), '▶ 例句'));
+    if (vExKo(w)) { acts.appendChild(speakBtn(vExKo(w), '▶ 例句')); acts.appendChild(speakBtn(vExKo(w), '🐢', 0.7)); }
     acts.appendChild(starBtn(w.ex || w.ko, w.ex ? w.exZh : w.zh, '单词 · ' + w.ko));
   }
   // 选择题 / 听音选义 / 听写。ui = { body, foot, keys }；grade(0|1|2) 记分并进入下一个
@@ -2044,7 +2220,7 @@
 
   /* 背词：全屏专注模式。卡片：看韩语想中文（或看中文说韩语）→ 翻面 → 不认识 / 模糊 / 认识。
      morePool：背完后可以"再背 20 个新词"（不受每天上限限制）；onEnd：回到单词页 */
-  function vSession(queue, onEnd, morePool) {
+  function vSession(queue, onEnd, morePool, resume) {
     const dir = S.settings.vocabDir || 'ko';
     let mode = vMode();
     const MODE_NAME = Object.fromEntries(VMODES);
@@ -2054,7 +2230,21 @@
     const seen = new Set();
     const F = focusShell(MODE_NAME[mode] || '', '背单词');
     const { ov, body, foot, ui, close } = F;
-    const end = () => { if (!done) { close(); onEnd(); } else { queue.length = 0; render(); } };
+    if (resume) { done = resume.done || 0; total = resume.total || queue.length + done; known = resume.known || 0; unknown = resume.unknown || []; }
+    // 撤销：记下这一步之前的样子
+    const snap = (ko) => {
+      const st = { q: queue.slice(), done, total, known, unknown: unknown.slice(), mode, ko, v: S.vocab[ko] ? Object.assign({}, S.vocab[ko]) : null, vn: S.vocabNew[today()] };
+      F.pushUndo(() => {
+        queue.length = 0; queue.push(...st.q); done = st.done; total = st.total; known = st.known; unknown = st.unknown; mode = st.mode;
+        if (st.v) S.vocab[st.ko] = st.v; else delete S.vocab[st.ko];
+        if (st.vn == null) delete S.vocabNew[today()]; else S.vocabNew[today()] = st.vn;
+        $('.vf-mode', ov).textContent = MODE_NAME[mode] || '';
+        save(); render();
+      });
+    };
+    // 中断续练：没背完就离开（来电话、切 App、刷新），回来时首页提示接着背
+    const persist = () => saveResume('v', queue.length ? { mode, queue: queue.map((x) => x.ko), done, total, known, unknown: unknown.map((x) => x.ko), at: Date.now() } : null);
+    const end = () => { saveResume('v', null); if (!done) { close(); onEnd(); } else { queue.length = 0; render(); } };
     ui.onEsc = end;
     function setProg(w) {
       F.setProg(w ? done / Math.max(total, 1) : 1, w ? `${done + 1} / ${total}${!S.vocab[w.ko] ? ' · 新词' : ' · 复习'}${vSrcTag(w) ? ' · ' + vSrcTag(w) : ''}` : (mode === 'sift' ? `筛完 ${done} 个` : `本轮完成 ${done} 个`));
@@ -2064,7 +2254,7 @@
     const knownBtn = () => {
       const w = queue[0]; if (!w || mode === 'sift') return;
       const b = h('<button class="vf-known">✔ 早就会了，标熟练</button>');
-      b.onclick = () => { markKnown(w.ko); save(); queue.shift(); done++; known++; toast('已标熟练（约 3 个月后再确认一次）'); render(); };
+      b.onclick = () => { snap(w.ko); markKnown(w.ko); save(); queue.shift(); done++; known++; toast('已标熟练（约 3 个月后再确认一次）'); render(); };
       foot.appendChild(b);
     };
     ui.extraFoot = knownBtn;
@@ -2076,7 +2266,7 @@
       foot.innerHTML = `${unknown.length ? `<button class="btn primary big vf-main v-learn-unknown">▶ 现在学这 ${unknown.length} 个不会的</button>` : ''}
         <div class="vf-row">${more.length ? '<button class="btn v-sift-more">再筛 50 个</button>' : ''}<button class="btn ghost v-back">回到单词页</button></div>`;
       const lu = $('.v-learn-unknown', foot);
-      if (lu) lu.onclick = () => { mode = 'card'; $('.vf-mode', ov).textContent = MODE_NAME.card; queue.push(...unknown); total = done + unknown.length; unknown = []; render(); };
+      if (lu) lu.onclick = () => { F.clearUndo(); mode = 'card'; $('.vf-mode', ov).textContent = MODE_NAME.card; queue.push(...unknown); total = done + unknown.length; unknown = []; render(); };
       const sm = $('.v-sift-more', foot);
       if (sm) sm.onclick = () => { const nx = more.slice(0, 50); queue.push(...nx); total += nx.length; render(); };
       $('.v-back', foot).onclick = () => { close(); onEnd(); };
@@ -2091,8 +2281,8 @@
       foot.innerHTML = `<div class="vf-sift"><button class="btn s-no">😶<span>不会</span></button><button class="btn s-yes">✅<span>会，标熟练</span></button></div>`;
       const peek = () => { $('.vf-peek-ans', body).classList.remove('hidden'); const pk = $('.vf-peek', body); if (pk) pk.remove(); speak(w.ko); };
       $('.vf-card', body).onclick = peek;
-      const yes = () => { markKnown(w.ko); save(); known++; queue.shift(); done++; render(); };
-      const no = () => { unknown.push(w); queue.shift(); done++; render(); };
+      const yes = () => { snap(w.ko); markKnown(w.ko); save(); known++; queue.shift(); done++; render(); };
+      const no = () => { snap(w.ko); unknown.push(w); queue.shift(); done++; render(); };
       $('.s-yes', foot).onclick = yes; $('.s-no', foot).onclick = no;
       ui.keys = (e) => { if (e.key === '1' || e.key === 'ArrowLeft') { e.preventDefault(); no(); } else if (e.key === '2' || e.key === 'ArrowRight') { e.preventDefault(); yes(); } else if (e.key === ' ') { e.preventDefault(); peek(); } };
     }
@@ -2100,6 +2290,7 @@
       stopListen();
       body.scrollTop = 0; ui.keys = null;
       body.classList.remove('vf-flipped');
+      persist();
       if (!queue.length && mode === 'sift') { setProg(null); renderSiftEnd(); return; }
       if (!queue.length) {
         setProg(null);
@@ -2115,7 +2306,7 @@
       const w = queue[0];
       setProg(w);
       if (mode === 'sift') { renderSift(w); return; }
-      const grade = (g) => { rateVocab(w.ko, g); queue.shift(); done++; if (g === 0) { queue.splice(Math.min(queue.length, 4), 0, w); total++; } render(); };
+      const grade = (g) => { snap(w.ko); rateVocab(w.ko, g); queue.shift(); done++; if (g === 0) { queue.splice(Math.min(queue.length, 4), 0, w); total++; } render(); };
       if (mode !== 'card') { vQuizCard(ui, w, mode, grade); knownBtn(); return; }
       body.innerHTML = `<div class="vf-card vf-tap">
           ${dir === 'ko' ? `<div class="v-front" lang="ko">${esc(w.ko)}</div>` : `<div class="v-front zh-front">${esc(w.zh)}</div>${w.pos ? `<div class="muted small center-row">${esc(w.pos)}</div>` : ''}`}
@@ -3309,10 +3500,12 @@
         <p class="small"><button class="btn small ghost logout">退出登录</button> <span class="muted">退出后需要重新输入账号密码，学习进度不会丢</span></p>
       </section>
       <section class="card"><h2>关于</h2>
+        <p class="small"><button class="btn small ghost ob-again">重新看新手引导</button></p>
         <p class="small">版本：<code>${esc(appVersion())}</code>${ARTIFACT ? '（claude.ai 网页版）' : STANDALONE ? '（主屏幕 App）' : ''}${!ARTIFACT && 'serviceWorker' in navigator ? ` · 离线可用：${navigator.serviceWorker.controller ? '✅' : '第一次打开后可用'}` : ''}</p>
         ${errCount() ? `<p class="small">最近有 ${errCount()} 条错误记录。<button class="btn small ghost copy-errs">复制错误信息</button><button class="btn small ghost clear-errs">清除记录</button></p>` : '<p class="small muted">没有错误记录。</p>'}
       </section>`);
     bindPwChange(el);
+    const oa = $('.ob-again', el); if (oa) oa.onclick = () => onboarding();
     const lo = $('.logout', el);
     if (lo) lo.onclick = () => confirmInline(lo.closest('p'), '确定退出登录吗？学习进度不会丢。', '退出登录', () => { if (window.KSS_GATE) window.KSS_GATE.logout(); });
     const ce = $('.copy-errs', el); if (ce) ce.onclick = () => copyText(window.KSS_ERR.recent().join('\n\n────────\n\n'));
@@ -3385,6 +3578,7 @@
     document.addEventListener('focusin', (e) => { if (isField(e.target)) document.body.classList.add('kb-open'); });
     document.addEventListener('focusout', () => setTimeout(() => { if (!isField(document.activeElement)) document.body.classList.remove('kb-open'); }, 80));
     route();
+    if (needOnboarding()) setTimeout(onboarding, 400);
     if (!VOCAB_FULL) {
       // 首屏先出来，再在后台加载完整词库；直接打开单词/搜索页就马上加载
       const nm = (location.hash.match(/^#\/?([a-z]+)/) || [])[1];

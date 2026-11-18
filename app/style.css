@@ -653,3 +653,21 @@ html:not(.kss-ok) body > *:not(#gate):not(#err-bar) { display: none !important; 
 .ac-pass-row input { flex: 1; }
 .ac-msg, .pw-msg { margin-top: 8px; line-height: 1.6; word-break: break-all; }
 .ai-lock h2 { font-size: 1.1rem; }
+
+/* 撤销、续练、继续上次、慢速 */
+.vf-undo { flex: none; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 99px; padding: 6px 12px; font-size: .85rem; cursor: pointer; }
+.resume-card { border-left: 4px solid var(--accent-2); padding: 10px 14px; }
+.resume-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 0; }
+.resume-row span { flex: 1; min-width: 180px; }
+.continue-btn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btn.slow-on { background: var(--ok-soft); border-color: var(--ok); }
+
+/* 新手引导 */
+.ob h2 { text-align: center; margin: 4px 0 10px; }
+.ob .vf-big { text-align: center; }
+.ob-list { line-height: 1.8; padding-left: 1.3em; }
+.ob-key { background: var(--accent-soft); color: var(--ink); padding: 8px 12px; border-radius: 10px; }
+.ob-tips { margin-top: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; line-height: 1.8; }
+.ob-help { margin-top: 14px; line-height: 1.7; }
+.ob-help ol { padding-left: 1.3em; }
+.ob-res { margin-top: 10px; text-align: center; }

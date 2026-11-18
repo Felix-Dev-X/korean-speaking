@@ -75,8 +75,11 @@
       go.disabled = true; go.textContent = '登录中……'; err.textContent = '';
       check(u.value, p.value).then(function (a) {
         if (a) {
-          try { (document.getElementById('gate-remember').checked ? localStorage : sessionStorage).setItem(KEY, a.hash); } catch (e2) { /* ignore */ }
-          location.reload();   // 重新打开：按这个账号加载它自己的学习进度和权限
+          // 这个标签页里一定记住（sessionStorage）；勾了「记住这台设备」再存到 localStorage。
+          // 写完稍等一下再刷新：立刻刷新时偶尔会读到写入之前的状态，又回到登录框
+          try { sessionStorage.setItem(KEY, a.hash); } catch (e2) { /* ignore */ }
+          try { if (document.getElementById('gate-remember').checked) localStorage.setItem(KEY, a.hash); } catch (e2) { /* ignore */ }
+          setTimeout(function () { location.reload(); }, 150);   // 重新打开：按这个账号加载它自己的学习进度和权限
           return;
         }
         fails++;

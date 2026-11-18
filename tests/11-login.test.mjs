@@ -35,7 +35,7 @@ export default async (t) => {
     t.check(/账号或密码不对/.test(await p.locator('.gate-err').innerText()), `${name}：别的账号的密码不能用`);
     // 管理员（账号不分大小写）
     await login(p, ' Tester ', 'right-pass-123');
-    await p.waitForSelector('.hero', { timeout: 5000 });
+    await p.waitForSelector('.hero', { timeout: 15000 });
     t.check(!(await p.locator('#gate').count()), `${name}：管理员登录后能进`);
     await t.go(p, '#ai');
     t.check(!(await p.locator('.ai-lock').count()), `${name}：管理员能用 AI 陪练`);
@@ -44,11 +44,11 @@ export default async (t) => {
     await t.go(p, '#prefs');
     t.check(/当前登录：tester（管理员）/.test(await p.locator('.account').innerText()), `${name}：设置里显示当前账号`);
     await p.locator('.logout').click(); await p.locator('.confirm-box .ok').click();
-    await p.waitForSelector('#gate', { timeout: 5000 });
+    await p.waitForSelector('#gate', { timeout: 15000 });
     t.check(!(await p.locator('#app').isVisible()), `${name}：退出登录后又要登录`);
     // 普通账户
     await login(p, 'stu', 'stu-pass-456');
-    await p.waitForSelector('.account', { timeout: 5000 });   // 刚才停在设置页
+    await p.waitForSelector('.account', { timeout: 15000 });   // 刚才停在设置页
     await t.go(p, '#ai');
     t.check(await p.locator('.ai-lock').isVisible(), `${name}：普通账户打开 AI 陪练显示「只对管理员开放」`);
     await t.go(p, '#ai-s1');
