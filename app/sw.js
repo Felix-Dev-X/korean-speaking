@@ -3,10 +3,10 @@
  * - 带 ?v=版本号 的文件内容不会变：先用缓存
  * - 页面本身（index.html）：先联网取最新的，没网才用缓存，所以更新照常生效
  * - 新版本生效后删掉旧缓存 */
-const VERSION = "24f18e55";
+const VERSION = "5835b29c";
 const CACHE = 'kss-' + VERSION;
 const ASSETS = [
-  "style.css?v=3fa43a1f",
+  "style.css?v=4355e2de",
   "data/vocab-nikl.js?v=3242adb5",
   "errors.js?v=e24340ac",
   "data/week1-2.js?v=0e81ab82",
@@ -58,7 +58,7 @@ const ASSETS = [
   "data/pronunciation.js?v=f6f5d8ec",
   "data/pronunciation-2.js?v=d48d159f",
   "data/ai-scenarios.js?v=b89542f4",
-  "app.js?v=0a3245a9",
+  "app.js?v=b653f9d5",
   "manifest.webmanifest",
   "icon-180.png",
   "icon-192.png",

@@ -98,4 +98,54 @@ export default async (t) => {
   // 背词中切到别的页面：专注模式自动关闭
   await m.locator('.v-start').click(); await t.go(m, '#home');
   t.eq([await m.locator('.vf').count(), await m.evaluate(() => document.body.classList.contains('vf-open'))], [0, false], '切页面后专注模式关闭');
+
+  // ── 早就会了：背词时直接标熟练 ──
+  await t.go(m, '#vocab'); await m.waitForSelector('.v-modes');
+  await m.locator('.v-start').click();
+  const k1 = await m.locator('.vf').getAttribute('data-ko');
+  await m.locator('.vf-known').click(); await m.waitForTimeout(150);
+  const s1 = await m.evaluate((k) => window.__kss.state().vocab[k], k1);
+  t.check(s1 && s1.ivl >= 21 && s1.due > new Date().toISOString().slice(0, 10), '「早就会了」标为熟练、很久以后才出现：' + JSON.stringify(s1));
+  t.check((await m.locator('.vf').getAttribute('data-ko')) !== k1, '标熟练后跳到下一个');
+  await m.keyboard.press('Escape'); await m.locator('.v-back').click(); await m.waitForTimeout(150);
+
+  // ── 快速筛词：会 = 标熟练，不会 = 留下来学；不算进每天新词数 ──
+  const newBefore = await m.evaluate(() => window.__kss.state().vocabNew[new Date().toISOString().slice(0, 10)] || 0);
+  await m.locator('.v-modes .chip[data-m="sift"]').click();
+  t.check(/快速筛词/.test(await m.locator('.v-start').innerText()), '筛词模式下开始按钮变成「快速筛词」');
+  await m.locator('.v-start').click();
+  const sifted = [];
+  for (let i = 0; i < 4; i++) {
+    sifted.push(await m.locator('.vf').getAttribute('data-ko'));
+    await m.locator(i % 2 ? '.s-no' : '.s-yes').click(); await m.waitForTimeout(60);
+  }
+  await m.keyboard.press('ArrowRight'); await m.waitForTimeout(60);   // 键盘 → = 会
+  await m.keyboard.press('Escape'); await m.waitForTimeout(120);
+  const endTxt = await m.locator('.vf-body').innerText();
+  t.check(/会的 3 个已标熟练/.test(endTxt) && /不会的 2 个/.test(endTxt), '筛词完成页统计：' + endTxt.replace(/\n/g, ' '));
+  const st = await m.evaluate((ks) => ks.map((k) => window.__kss.state().vocab[k] || null), sifted);
+  t.check(st[0] && st[0].ivl >= 21 && !st[1] && st[2] && !st[3], '会的标熟练，不会的还是新词');
+  t.eq(await m.evaluate(() => window.__kss.state().vocabNew[new Date().toISOString().slice(0, 10)] || 0), newBefore, '标熟练不算进每天新词数');
+  await m.locator('.v-learn-unknown').click(); await m.waitForTimeout(120);
+  t.check(await m.locator('.v-flip').isVisible() && sifted.includes(await m.locator('.vf').getAttribute('data-ko')), '「现在学不会的」用卡片学刚才不会的词');
+  await m.keyboard.press('Escape'); await m.waitForTimeout(100);
+  if (await m.locator('.v-back').count()) await m.locator('.v-back').click();
+  await m.waitForTimeout(150);
+
+  // ── 总表：单个标熟练 / 重新学；整个列表标熟练 + 撤销 ──
+  await m.locator('.v-modes .chip[data-m="card"]').click();
+  await m.locator('.v-f').selectOption('book'); await m.locator('.v-3').selectOption('1'); await m.locator('.v-sf').selectOption('new'); await m.waitForTimeout(300);
+  const n0 = parseInt((await m.locator('.v-count').innerText()).replace(/,/g, ''), 10);
+  await m.locator('.v-item .v-main').first().click();
+  const w0 = await m.locator('.v-item.open').getAttribute('data-ko');
+  await m.locator('.v-item.open .v-mk').click();
+  t.eq(await m.locator('.v-item.open .v-badge').innerText(), '熟练', '总表里单个标熟练');
+  await m.locator('.v-item.open .v-reset').click();
+  t.check(!(await m.evaluate((k) => window.__kss.state().vocab[k], w0)), '「重新学」清除记录');
+  await m.locator('.v-known-list').click(); await m.locator('.confirm-box .ok').click(); await m.waitForTimeout(300);
+  t.eq(await m.locator('.v-count').innerText(), '0 个', `TOPIK 书初级未学的 ${n0} 个一次标完`);
+  const fl = await m.evaluate(() => Object.values(window.__kss.state().vocab).filter((v) => v.ivl >= 90).length);
+  t.check(fl >= n0, '整个列表都变成熟练');
+  await m.locator('.v-undo button').click(); await m.waitForTimeout(300);
+  t.eq(parseInt((await m.locator('.v-count').innerText()).replace(/,/g, ''), 10), n0, '撤销后恢复');
 };
