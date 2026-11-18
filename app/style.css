@@ -637,3 +637,19 @@ html:not(.kss-ok) body > *:not(#gate):not(#err-bar) { display: none !important; 
 .pw-change summary { cursor: pointer; font-weight: 600; }
 .pw-msg { margin-top: 8px; line-height: 1.6; }
 .gh-help ol { padding-left: 1.3em; line-height: 1.7; }
+
+/* 账号管理 */
+.account input[type=text], .account input[type=password], .account select { width: 100%; }
+.acct-mgr { margin: 8px 0; }
+.acct-mgr > summary { cursor: pointer; font-weight: 600; }
+.acct-list { margin: 8px 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.acct-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.acct-row:first-child { border-top: 0; }
+.acct-name { font-weight: 600; font-family: ui-monospace, Menlo, monospace; }
+.acct-role { font-size: .75rem; padding: 1px 8px; border-radius: 99px; background: var(--blue-soft); color: var(--accent-2); }
+.acct-role.admin { background: var(--accent-soft); color: var(--accent); }
+.acct-acts { margin-left: auto; display: flex; gap: 6px; }
+.acct-h { margin: 14px 0 4px; font-size: .95rem; }
+.ac-pass-row input { flex: 1; }
+.ac-msg, .pw-msg { margin-top: 8px; line-height: 1.6; word-break: break-all; }
+.ai-lock h2 { font-size: 1.1rem; }

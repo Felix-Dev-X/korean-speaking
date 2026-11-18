@@ -18,12 +18,12 @@ const run = (cmd, a, opts = {}) => execFileSync(cmd, a, Object.assign({ cwd: src
 console.log('⓪ 同步公开仓库最新的登录密码（网页里改过密码的话，以公开仓库为准）');
 try { execFileSync('git', ['pull', '-q', '--ff-only'], { cwd: dst, stdio: 'inherit' }); } catch (e) { console.error('  公开仓库 git pull 失败，先处理好再发布'); process.exit(1); }
 {
-  const cfg = (f) => (fs.existsSync(f) ? (fs.readFileSync(f, 'utf8').match(/var CONFIG = \{[^}]*\};/) || [])[0] : null);
+  const cfg = (f) => (fs.existsSync(f) ? (fs.readFileSync(f, 'utf8').match(/var ACCOUNTS = \[[\s\S]*?\n  \];/) || [])[0] : null);
   const srcGate = path.join(src, 'app', 'gate.js'), dstGate = path.join(dst, 'app', 'gate.js');
   const a = cfg(srcGate), b = cfg(dstGate);
   if (a && b && a !== b && !args.includes('--keep-local-password')) {
     fs.writeFileSync(srcGate, fs.readFileSync(srcGate, 'utf8').replace(a, b));
-    console.log('  公开仓库里的密码和本地不同（可能在网页里改过），已采用公开仓库的。要用本地的密码覆盖，加 --keep-local-password');
+    console.log('  公开仓库里的账号/密码和本地不同（可能在网页里改过），已采用公开仓库的。要用本地的覆盖，加 --keep-local-password');
   }
 }
 

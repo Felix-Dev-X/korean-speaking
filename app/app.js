@@ -100,7 +100,12 @@
   }
 
   /* ═════════════ 进度存储 ═════════════ */
-  const STORE_KEY = 'kss-v1';
+  // 登录账号（gate.js）：管理员用原来的存储；普通账户各自一份，同一台设备上不会混在一起
+  const ME = (window.KSS_GATE && window.KSS_GATE.account) || null;
+  const ACCT_SUFFIX = ME && ME.role !== 'admin' ? '-' + ME.name : '';
+  const STORE_KEY = 'kss-v1' + ACCT_SUFFIX;
+  // AI 陪练 / AI 批改只对管理员开放（没有登录门的旧环境照常可用）
+  const CAN_AI = !window.KSS_GATE || !!window.KSS_GATE.isAdmin;
   const defaults = () => ({
     v: 1,
     schedule: 2,       // 2 = 每周 5 课 + 复习 + 周测
@@ -255,7 +260,7 @@
       const [db, user] = await Promise.all([CLAUDE.use('db'), CLAUDE.use('user')]);
       const id = db && user ? await user.id() : null;
       if (!id) { CLOUD.state = 'off'; return; }
-      CLOUD.ref = db.doc('data/users/' + id + '/progress');
+      CLOUD.ref = db.doc('data/users/' + id + '/progress' + ACCT_SUFFIX);
       const remote = await cloudRead();
       CLOUD.ready = true; CLOUD.state = 'on';
       // 本机和账户里的进度合并：哪边都不丢
@@ -527,8 +532,8 @@
         <label class="lbl">${hasMic ? '识别出的文字（可以手动修改后再批改）' : '点下面的框 → 键盘上的 🎤 → 一口气用韩语说完（说的内容会变成文字）'}</label>
         <textarea class="transcript" lang="ko" rows="4" placeholder="${hasSR ? '录音时会自动识别……' : hasMic ? '你的浏览器不支持语音识别，可以手动输入你说的内容' : '用键盘语音输入说韩语……'}"></textarea>
         <div class="check-row">
-          <button class="btn ai-grade ${aiReady() || !ARTIFACT ? '' : 'hidden'}">🤖 AI 批改</button>
-          <button class="btn ghost copy-grade">复制批改提示词（粘贴到 Claude 网页/App）</button>
+          <button class="btn ai-grade ${CAN_AI && (aiReady() || !ARTIFACT) ? '' : 'hidden'}">🤖 AI 批改</button>
+          <button class="btn ghost copy-grade ${CAN_AI ? '' : 'hidden'}">复制批改提示词（粘贴到 Claude 网页/App）</button>
         </div>
         <div class="grade"></div>
       </div>
@@ -656,7 +661,7 @@
       if (/^#(ai|unit|day)/.test(location.hash)) route();
     }).catch(() => { SAMPLE_STATE = 'none'; });
   }
-  const aiReady = () => (ARTIFACT ? !!SAMPLE : !!S.settings.apiKey);
+  const aiReady = () => CAN_AI && (ARTIFACT ? !!SAMPLE : !!S.settings.apiKey);
   function sampleErr(e) {
     const c = e && e.code;
     return ({
@@ -816,7 +821,7 @@
     ['#drills', '🎯', '专项练习', '数字、听辨、真实口语、接话、听力理解、语体转换'],
     ['#pron', '👄', '发音', '发音规则和易错音'],
     ['#ai', '🤖', 'AI 陪练', '自由对话和批改'],
-  ];
+  ].filter((x) => CAN_AI || x[0] !== '#ai');
   function updateTabBadges() {
     const bd = (t, n) => { const b = $(`#tabbar a[data-t="${t}"] .tb-badge`); if (b) { b.textContent = n > 99 ? '99+' : String(n || ''); b.classList.toggle('hidden', !n); } };
     try { bd('review', dueIds().length); bd('vocab', vDue().length); } catch (e) { /* ignore */ }
@@ -2857,6 +2862,13 @@
 
   /* ═════════════ AI 陪练 ═════════════ */
   function viewAI(sid) {
+    if (!CAN_AI) {
+      setView(`<h1 class="page-title">AI 陪练</h1><div class="card ai-lock"><h2>🔒 AI 陪练只对管理员账户开放</h2>
+        <p>你现在用的是普通账户（<b>${esc(ME ? ME.name : '')}</b>）。课程、情景对话、句库、短文跟读、百问、专项练习、发音、复习、背单词这些功能都可以正常使用。</p>
+        <p class="muted small">需要 AI 陪练的话，请联系管理员。</p>
+        <div class="check-row"><a class="btn primary" href="#practice">去练习</a><a class="btn ghost" href="#home">回首页</a></div></div>`);
+      return;
+    }
     if (sid) return viewAIChat(sid);
     const ready = aiReady();
     const intro = ARTIFACT
@@ -3030,59 +3042,161 @@
   const appVersion = () => (window.KSS_ERR ? window.KSS_ERR.version() : window.KSS_VERSION || '开发版');
   const errCount = () => (window.KSS_ERR ? window.KSS_ERR.recent().length : 0);
 
-  /* ── 修改登录密码 ──
-     网站是 GitHub Pages 上的静态网页：改密码 = 用 GitHub 令牌把新的密码摘要提交到仓库的 app/gate.js，
-     GitHub Pages 大约 1–2 分钟后更新，之后所有设备都要用新密码登录。 */
+  /* ── 账号：改密码、管理账号（管理员）──
+     网站是 GitHub Pages 上的静态网页，账号列表写在仓库的 app/gate.js 里：
+     改密码 / 增删账号 = 用 GitHub 令牌把新的账号列表（只有密码摘要）提交到仓库，GitHub Pages 大约 1–2 分钟后更新。 */
   const GH_REPO = (() => {
     const m = location.hostname.match(/^([^.]+)\.github\.io$/), seg = location.pathname.split('/').filter(Boolean)[0];
     return m && seg ? `${m[1]}/${seg}` : 'Felix-Dev-X/korean-speaking';
   })();
   const GH_KEY = 'kss-gh-token';
   const ghToken = () => { try { return localStorage.getItem(GH_KEY) || ''; } catch (e) { return ''; } };
-  const b64encode = (text) => { const bytes = new TextEncoder().encode(text); let bin = ''; bytes.forEach((b) => { bin += String.fromCharCode(b); }); return btoa(bin); };
+  const b64encode = (text) => { const bytes = new TextEncoder().encode(text); let bin = ''; bytes.forEach((x) => { bin += String.fromCharCode(x); }); return btoa(bin); };
   const b64decode = (b64) => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g, '')), (c) => c.charCodeAt(0)));
+  const ACCT_RE = /var ACCOUNTS = \[[\s\S]*?\n  \];/;
+  const ROLE_NAME = { admin: '管理员', user: '普通账户' };
+  const randPass = () => { const al = 'abcdefghjkmnpqrstuvwxyz23456789', r = crypto.getRandomValues(new Uint8Array(12)); return [0, 4, 8].map((i) => Array.from(r.slice(i, i + 4), (x) => al[x % al.length]).join('')).join('-'); };
+  async function makeAcct(name, pass, role) {
+    const salt = Array.from(crypto.getRandomValues(new Uint8Array(16)), (x) => x.toString(16).padStart(2, '0')).join('');
+    return { name: window.KSS_GATE.norm(name), role, salt, iter: 200000, hash: await window.KSS_GATE.derive(name, pass, salt, 200000) };
+  }
+  // 读仓库里的账号列表 → mutate(list) 返回新列表 → 提交。出错抛出中文说明
+  async function ghSaveAccounts(token, mutate, message) {
+    const api = `https://api.github.com/repos/${GH_REPO}/contents/app/gate.js`;
+    const headers = { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json' };
+    let r;
+    try { r = await fetch(api, { headers }); } catch (e) { throw new Error('连不上 GitHub，请检查网络后再试。'); }
+    if (r.status === 401) throw new Error('GitHub 令牌无效或已过期，请重新生成。');
+    if (!r.ok) throw new Error(`读取仓库文件失败（${r.status}）。请确认令牌选了仓库 ${GH_REPO}，并有 Contents 读写权限。`);
+    const file = await r.json();
+    const text = b64decode(file.content);
+    const m = text.match(ACCT_RE);
+    if (!m) throw new Error('仓库里的 gate.js 格式不对，没有改动。');
+    const list = JSON.parse(m[0].replace(/^var ACCOUNTS = /, '').replace(/;$/, ''));
+    const next = await mutate(list.slice());
+    if (!next.some((x) => x.role === 'admin')) throw new Error('至少要留一个管理员账号。');
+    const body = 'var ACCOUNTS = [\n' + next.map((x) => '    ' + JSON.stringify(x)).join(',\n') + '\n  ];';
+    let put;
+    try { put = await fetch(api, { method: 'PUT', headers, body: JSON.stringify({ message, content: b64encode(text.replace(ACCT_RE, body)), sha: file.sha }) }); }
+    catch (e) { throw new Error('连不上 GitHub，请检查网络后再试。'); }
+    if (put.status === 401) throw new Error('GitHub 令牌无效或已过期，请重新生成。');
+    if (put.status === 403 || put.status === 404) throw new Error('令牌没有写这个仓库的权限：Contents 要选「Read and write」。');
+    if (put.status === 409) throw new Error('仓库刚被改过，请刷新页面后再试。');
+    if (!put.ok) throw new Error(`保存失败（${put.status}），请稍后再试。`);
+    return next;
+  }
+  function accountHtml() {
+    const G = window.KSS_GATE;
+    if (!G || !G.account) return '<p class="small muted">没有登录门（本地开发环境）。</p>';
+    const me = G.account;
+    if (me.role !== 'admin') {
+      return `<p>当前登录：<b>${esc(me.name)}</b>（普通账户）</p>
+        <p class="small muted">普通账户可以使用除 AI 陪练以外的全部功能。学习进度按账号分开保存。忘了密码请找管理员重设。</p>`;
+    }
+    const tokenBox = ghToken() ? `<p class="small">✅ 这台设备已保存 GitHub 令牌 <button class="btn small ghost gh-clear">清除</button></p>` : `
+      <label class="lbl" for="gh-token">GitHub 令牌（改密码、管理账号需要，第一次填一次）</label>
+      <input id="gh-token" class="gh-token" type="password" autocomplete="off" placeholder="github_pat_…">
+      <label class="switch small"><input type="checkbox" class="gh-remember" checked> 在这台设备上记住令牌</label>
+      <details class="small gh-help"><summary>GitHub 令牌是什么、怎么弄？</summary>
+        <p>网站是放在 GitHub 上的，没有自己的服务器。账号和密码摘要写在仓库的 app/gate.js 里，改密码、增删账号都要提交到仓库，需要你授权：</p>
+        <ol><li>浏览器登录 github.com → Settings → Developer settings → Personal access tokens → <b>Fine-grained tokens</b> → Generate new token</li>
+          <li>Repository access 选 <b>Only select repositories</b> → 选 <code>${esc(GH_REPO)}</code></li>
+          <li>Permissions → Repository permissions → <b>Contents</b> 选 <b>Read and write</b>，其他不用动</li>
+          <li>生成后复制（github_pat_ 开头），粘贴到上面</li></ol>
+        <p>令牌只保存在这台设备的浏览器里，只能改这一个仓库的文件。</p></details>`;
+    if (ARTIFACT) {
+      return `<p>当前登录：<b>${esc(me.name)}</b>（管理员）</p>
+        <p class="small muted">claude.ai 网页版不能直接改密码、管理账号：请在 GitHub 网页版的「设置 → 账号」里操作，然后告诉 Claude 重新发布这个链接（这个网页版的账号要重新打包才会更新）。</p>`;
+    }
+    const rows = G.accounts.map((x) => `<div class="acct-row" data-name="${esc(x.name)}"><span class="acct-name">${esc(x.name)}</span><span class="acct-role ${x.role}">${ROLE_NAME[x.role] || x.role}</span>${x.name === me.name ? '<span class="muted small">（你）</span>' : ''}
+        <span class="acct-acts"><button class="btn small ghost acct-reset">重设密码</button>${x.name === me.name ? '' : '<button class="btn small ghost acct-del">删除</button>'}</span></div>`).join('');
+    return `<p>当前登录：<b>${esc(me.name)}</b>（管理员）· 管理员可以用 AI 陪练；普通账户除 AI 陪练外全部功能都能用。</p>
+      <div class="gh-box">${tokenBox}</div>
+      <details class="pw-change"><summary>修改我的密码</summary>
+        <label class="lbl" for="pw-old">当前密码</label><input id="pw-old" class="pw-old" type="password" autocomplete="current-password">
+        <label class="lbl" for="pw-new">新密码（至少 8 位）</label><input id="pw-new" class="pw-new" type="password" autocomplete="new-password">
+        <label class="lbl" for="pw-new2">再输一次新密码</label><input id="pw-new2" class="pw-new2" type="password" autocomplete="new-password">
+        <div class="check-row"><button class="btn primary pw-go">修改密码</button></div>
+        <div class="pw-msg small"></div>
+      </details>
+      <details class="acct-mgr"><summary>账号管理（${G.accounts.length} 个）</summary>
+        <div class="acct-list">${rows}</div>
+        <h4 class="acct-h">新增账号 / 重设密码</h4>
+        <label class="lbl" for="ac-name">账号（字母、数字、. _ -）</label><input type="text" id="ac-name" class="ac-name" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="例如 user4">
+        <label class="lbl" for="ac-pass">密码（至少 8 位）</label>
+        <div class="check-row ac-pass-row"><input type="text" id="ac-pass" class="ac-pass" autocomplete="off" autocapitalize="none" spellcheck="false"><button class="btn small ac-rand">随机生成</button></div>
+        <label class="lbl" for="ac-role">类型</label><select id="ac-role" class="ac-role"><option value="user">普通账户（不能用 AI 陪练）</option><option value="admin">管理员（能用 AI 陪练、管理账号）</option></select>
+        <div class="check-row"><button class="btn primary ac-go">保存账号</button></div>
+        <div class="ac-msg small"></div>
+      </details>`;
+  }
   function bindPwChange(el) {
-    const go = $('.pw-go', el); if (!go) return;
-    const msg = $('.pw-msg', el);
-    const say = (t, bad) => { msg.innerHTML = t; msg.className = 'pw-msg small ' + (bad ? 'bad-txt' : 'good-txt'); };
-    const gc = $('.gh-clear', el); if (gc) gc.onclick = () => { try { localStorage.removeItem(GH_KEY); } catch (e) { /* ignore */ } viewSettings(); setTimeout(() => { const d = $('.pw-change'); if (d) d.open = true; }, 0); };
+    const G = window.KSS_GATE;
+    if (!G || !G.isAdmin || ARTIFACT) return;
+    const gc = $('.gh-clear', el); if (gc) gc.onclick = () => { try { localStorage.removeItem(GH_KEY); } catch (e) { /* ignore */ } viewSettings(); };
+    const tokenNow = () => { const ti = $('.gh-token', el); return ti ? ti.value.trim() : ghToken(); };
+    const keepToken = () => { const ti = $('.gh-token', el), rm = $('.gh-remember', el); if (ti && ti.value.trim() && rm && rm.checked) { try { localStorage.setItem(GH_KEY, ti.value.trim()); } catch (e) { /* ignore */ } } };
+    const sayIn = (box) => (t, bad) => { box.innerHTML = t; box.className = box.className.replace(/ (bad|good)-txt/g, '') + (bad ? ' bad-txt' : ' good-txt'); };
+    const LATER = '大约 1–2 分钟后网站更新生效。claude.ai 网页版要告诉 Claude 重新发布后才会更新。';
+    // 修改我的密码
+    const go = $('.pw-go', el), say = sayIn($('.pw-msg', el));
     go.onclick = async () => {
-      const G = window.KSS_GATE;
-      const user = $('.pw-user', el).value.trim(), old = $('.pw-old', el).value, nw = $('.pw-new', el).value, nw2 = $('.pw-new2', el).value;
-      const tokIn = $('.gh-token', el), token = tokIn ? tokIn.value.trim() : ghToken();
-      if (!G || !G.derive) return say('登录模块没有加载，请刷新页面。', true);
-      if (!user || !old || !nw) return say('请把账号、当前密码、新密码都填上。', true);
+      const old = $('.pw-old', el).value, nw = $('.pw-new', el).value, nw2 = $('.pw-new2', el).value, token = tokenNow();
+      if (!old || !nw) return say('请填当前密码和新密码。', true);
       if (nw.length < 8) return say('新密码至少 8 位。', true);
       if (nw !== nw2) return say('两次输入的新密码不一样。', true);
       if (nw === old) return say('新密码和当前密码一样。', true);
-      if (!token) return say('需要 GitHub 令牌（见下面的说明）。', true);
+      if (!token) return say('需要 GitHub 令牌（见上面的说明）。', true);
       go.disabled = true; say('正在检查当前密码……');
       try {
-        if (await G.derive(user, old) !== G.config.hash) { say('账号或当前密码不对。', true); return; }
-        const salt = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
-        const iter = G.config.iter || 200000;
-        const hash = await G.derive(user, nw, salt, iter);
+        if (!(await G.check(G.account.name, old))) { say('当前密码不对。', true); return; }
+        const acct = await makeAcct(G.account.name, nw, G.account.role);
         say('正在保存到 GitHub……');
-        const api = `https://api.github.com/repos/${GH_REPO}/contents/app/gate.js`;
-        const headers = { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json' };
-        const r = await fetch(api, { headers });
-        if (r.status === 401) { say('GitHub 令牌无效或已过期，请重新生成。', true); return; }
-        if (!r.ok) { say(`读取仓库文件失败（${r.status}）。请确认令牌选了仓库 ${esc(GH_REPO)}，并有 Contents 读写权限。`, true); return; }
-        const file = await r.json();
-        const text = b64decode(file.content);
-        const line = `var CONFIG = { salt: '${salt}', iter: ${iter}, hash: '${hash}' };`;
-        const next = text.replace(/var CONFIG = \{[^}]*\};/, line);
-        if (next === text) { say('仓库里的 gate.js 格式不对，没有改动。', true); return; }
-        const put = await fetch(api, { method: 'PUT', headers, body: JSON.stringify({ message: '修改登录密码（在网页「设置 → 账号」里改的）', content: b64encode(next), sha: file.sha }) });
-        if (put.status === 401) { say('GitHub 令牌无效或已过期，请重新生成。', true); return; }
-        if (put.status === 403 || put.status === 404) { say('令牌没有写这个仓库的权限：Contents 要选「Read and write」。', true); return; }
-        if (!put.ok) { say(`保存失败（${put.status}），请稍后再试。`, true); return; }
-        if (tokIn && $('.gh-remember', el) && $('.gh-remember', el).checked) { try { localStorage.setItem(GH_KEY, token); } catch (e) { /* ignore */ } }
-        ['.pw-old', '.pw-new', '.pw-new2'].forEach((s) => { $(s, el).value = ''; });
-        say('✅ 新密码已保存到网站仓库。大约 1–2 分钟后网站更新，之后所有设备（包括这台）都要用新密码登录。<br>claude.ai 网页版的密码要告诉 Claude 重新发布后才会更新。');
-      } catch (err) {
-        say('连不上 GitHub，请检查网络后再试。', true);
-      } finally { go.disabled = false; }
+        await ghSaveAccounts(token, (list) => list.map((x) => (x.name === acct.name ? acct : x)), `修改 ${acct.name} 的登录密码（网页「设置 → 账号」）`);
+        keepToken();
+        ['.pw-old', '.pw-new', '.pw-new2'].forEach((q) => { $(q, el).value = ''; });
+        say('✅ 新密码已保存到网站仓库。' + LATER + '之后所有设备都要用新密码重新登录。');
+      } catch (err) { say(esc(err.message || '保存失败'), true); } finally { go.disabled = false; }
+    };
+    // 账号管理
+    const acGo = $('.ac-go', el), sayAc = sayIn($('.ac-msg', el));
+    const nameIn = $('.ac-name', el), passIn = $('.ac-pass', el), roleIn = $('.ac-role', el);
+    $('.ac-rand', el).onclick = () => { passIn.value = randPass(); };
+    const redraw = (list) => {
+      $('.acct-list', el).innerHTML = list.map((x) => `<div class="acct-row" data-name="${esc(x.name)}"><span class="acct-name">${esc(x.name)}</span><span class="acct-role ${x.role}">${ROLE_NAME[x.role] || x.role}</span>${x.name === G.account.name ? '<span class="muted small">（你）</span>' : ''}<span class="acct-acts"><button class="btn small ghost acct-reset">重设密码</button>${x.name === G.account.name ? '' : '<button class="btn small ghost acct-del">删除</button>'}</span></div>`).join('');
+      $('.acct-mgr > summary', el).textContent = `账号管理（${list.length} 个）`;
+      bindRows(list);
+    };
+    const bindRows = (list) => {
+      $$('.acct-row', el).forEach((row) => {
+        const nm = row.dataset.name, a = list.find((x) => x.name === nm);
+        $('.acct-reset', row).onclick = () => { nameIn.value = nm; roleIn.value = a ? a.role : 'user'; passIn.value = ''; passIn.focus(); sayAc('给 ' + esc(nm) + ' 输入新密码（或点「随机生成」），再点「保存账号」。'); };
+        const del = $('.acct-del', row);
+        if (del) del.onclick = () => confirmInline(row, `确定删除账号 ${nm}？删除后这个账号就不能登录了（它在各设备上的学习进度还在）。`, '删除', async () => {
+          const token = tokenNow(); if (!token) { sayAc('需要 GitHub 令牌（见上面的说明）。', true); return; }
+          sayAc('正在保存到 GitHub……');
+          try { const next = await ghSaveAccounts(token, (l) => l.filter((x) => x.name !== nm), `删除登录账号 ${nm}（网页「设置 → 账号」）`); keepToken(); redraw(next); sayAc(`✅ 已删除 ${esc(nm)}。` + LATER); }
+          catch (err) { sayAc(esc(err.message || '保存失败'), true); }
+        });
+      });
+    };
+    bindRows(G.accounts);
+    acGo.onclick = async () => {
+      const name = G.norm(nameIn.value), pass = passIn.value, role = roleIn.value, token = tokenNow();
+      if (!/^[a-z0-9._-]{2,32}$/.test(name)) return sayAc('账号只能用字母、数字和 . _ -，2–32 位。', true);
+      if (pass.length < 8) return sayAc('密码至少 8 位（可以点「随机生成」）。', true);
+      if (!token) return sayAc('需要 GitHub 令牌（见上面的说明）。', true);
+      if (name === G.account.name && role !== 'admin') return sayAc('不能把自己改成普通账户。', true);
+      acGo.disabled = true; sayAc('正在保存到 GitHub……');
+      try {
+        const acct = await makeAcct(name, pass, role);
+        let existed = false;
+        const next = await ghSaveAccounts(token, (list) => { const i = list.findIndex((x) => x.name === name); existed = i >= 0; if (existed) list[i] = acct; else list.push(acct); return list; },
+          `新增或重设登录账号 ${name}（网页「设置 → 账号」）`);
+        keepToken(); redraw(next);
+        sayAc(`✅ 已${existed ? '重设' : '新增'}${ROLE_NAME[role]} <b>${esc(name)}</b>，密码：<code>${esc(pass)}</code>（请记下来发给对方）。` + LATER);
+        nameIn.value = ''; passIn.value = '';
+      } catch (err) { sayAc(esc(err.message || '保存失败'), true); } finally { acGo.disabled = false; }
     };
   }
 
@@ -3177,7 +3291,7 @@
           ? '<p class="muted small">网页版用<b>手机键盘的语音输入</b>说韩语：先在系统设置里给键盘添加"韩语"，说话前把键盘切到韩语，再点 🎤。iPhone：设置 → 通用 → 键盘 → 添加新键盘 → 韩语，并打开"启用听写"。Android（Gboard）：设置 → 语言 → 添加韩语。</p>'
           : `<p class="muted small">语音识别：${hasSR ? '✅ 当前浏览器支持' : '❌ 当前浏览器不支持（推荐 Chrome / Edge / Safari）'}。需要通过 <code>http://localhost</code> 或 <code>https</code> 打开页面，并允许麦克风。</p>`}
       </section>
-      ${ARTIFACT ? '' : `<section class="card"><h2>AI 陪练（Anthropic API）</h2>
+      ${ARTIFACT || !CAN_AI ? '' : `<section class="card"><h2>AI 陪练（Anthropic API）</h2>
         <label class="lbl" for="api-key">API Key（只保存在本机浏览器）</label>
         <div class="check-row"><input type="password" class="key" id="api-key" value="${esc(S.settings.apiKey)}" placeholder="sk-ant-..." autocomplete="off"><button class="btn save-key">保存</button><button class="btn ghost clear-key">清除</button></div>
         <label class="lbl" for="model-sel">模型</label>
@@ -3191,27 +3305,7 @@
         ${preImport() ? `<p class="small muted">导入前的进度保存在本机（${esc(preImport().at)}）。<button class="btn small ghost undo-import">恢复导入前的进度</button></p>` : ''}
       </section>
       <section class="card account"><h2>账号</h2>
-        <p class="small">管理员账号登录。换了密码以后，所有设备都要用新密码重新登录。</p>
-        <details class="pw-change"><summary>修改密码</summary>
-          ${ARTIFACT ? `<p class="small">claude.ai 网页版不能直接改密码：请在 GitHub 网页版的「设置 → 账号」里修改，然后告诉 Claude 重新发布这个链接（这个网页版的密码要重新打包才会更新）。</p>` : `
-          <label class="lbl" for="pw-user">账号</label><input type="text" id="pw-user" class="pw-user" value="admin" autocomplete="username" autocapitalize="none" spellcheck="false">
-          <label class="lbl" for="pw-old">当前密码</label><input id="pw-old" class="pw-old" type="password" autocomplete="current-password">
-          <label class="lbl" for="pw-new">新密码（至少 8 位）</label><input id="pw-new" class="pw-new" type="password" autocomplete="new-password">
-          <label class="lbl" for="pw-new2">再输一次新密码</label><input id="pw-new2" class="pw-new2" type="password" autocomplete="new-password">
-          <div class="gh-box">${ghToken() ? `<p class="small">✅ 这台设备已保存 GitHub 令牌 <button class="btn small ghost gh-clear">清除</button></p>` : `
-            <label class="lbl" for="gh-token">GitHub 令牌（第一次需要，用来把新密码保存到网站仓库）</label>
-            <input id="gh-token" class="gh-token" type="password" autocomplete="off" placeholder="github_pat_…">
-            <label class="switch small"><input type="checkbox" class="gh-remember" checked> 在这台设备上记住令牌</label>
-            <details class="small gh-help"><summary>GitHub 令牌是什么、怎么弄？</summary>
-              <p>网站是放在 GitHub 上的，没有自己的服务器。改密码 = 把新密码的摘要写进仓库里的 app/gate.js，需要你授权：</p>
-              <ol><li>电脑或手机浏览器登录 github.com，打开 Settings → Developer settings → Personal access tokens → <b>Fine-grained tokens</b> → Generate new token</li>
-                <li>Repository access 选 <b>Only select repositories</b> → 选 <code>${esc(GH_REPO)}</code></li>
-                <li>Permissions → Repository permissions → <b>Contents</b> 选 <b>Read and write</b>，其他不用动</li>
-                <li>生成后复制（github_pat_ 开头），粘贴到上面</li></ol>
-              <p>令牌只保存在这台设备的浏览器里，只能改这一个仓库的文件。</p></details>`}</div>
-          <div class="check-row"><button class="btn primary pw-go">修改密码</button></div>
-          <div class="pw-msg small"></div>`}
-        </details>
+        ${accountHtml()}
         <p class="small"><button class="btn small ghost logout">退出登录</button> <span class="muted">退出后需要重新输入账号密码，学习进度不会丢</span></p>
       </section>
       <section class="card"><h2>关于</h2>
@@ -3240,7 +3334,7 @@
       setTimeout(() => { loadVoices(); viewSettings(); toast('找到 ' + koVoices.length + ' 个韩语语音'); }, 600);
     };
     $('.al', el).onchange = (e) => { S.settings.autoListen = e.target.checked; save(); };
-    if (!ARTIFACT) {
+    if (!ARTIFACT && CAN_AI) {   // API Key 设置只有管理员有
       $('.save-key', el).onclick = () => { S.settings.apiKey = $('.key', el).value.trim(); save(); toast('已保存'); };
       $('.clear-key', el).onclick = () => { S.settings.apiKey = ''; $('.key', el).value = ''; save(); toast('已清除'); };
       $('.model', el).onchange = (e) => { S.settings.model = e.target.value; save(); };
@@ -3280,6 +3374,7 @@
   /* ═════════════ 启动 ═════════════ */
   window.addEventListener('hashchange', route);
   function boot() {
+    if (!CAN_AI) $$('#nav a[data-r="ai"]').forEach((a) => a.classList.add('hidden'));
     if (!ARTIFACT) askPersist();
     if (!ARTIFACT && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
       window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch((e) => { if (window.KSS_ERR) window.KSS_ERR.log('离线缓存注册失败：' + e.message); }); });

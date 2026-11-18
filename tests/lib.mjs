@@ -37,7 +37,12 @@ export function artifactFile() {
 }
 
 // 登录：测试默认已登录（把 gate.js 里的摘要写进 localStorage，和真登录后一样）
-export const AUTH = (fs.readFileSync(path.join(ROOT, 'app', 'gate.js'), 'utf8').match(/hash: '([0-9a-f]{64})'/) || [])[1];
+// 读 gate.js 里的账号列表（测试默认用第一个管理员登录）
+export function gateAccounts() {
+  const m = fs.readFileSync(path.join(ROOT, 'app', 'gate.js'), 'utf8').match(/var ACCOUNTS = (\[[\s\S]*?\n  \]);/);
+  return m ? JSON.parse(m[1]) : [];
+}
+export const AUTH = (gateAccounts().find((a) => a.role === 'admin') || {}).hash;
 
 export function makeT(browser, base, name) {
   const failures = [], contexts = [];
