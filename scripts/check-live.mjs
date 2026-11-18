@@ -52,6 +52,8 @@ const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 const b = await chromium.launch();
 const p = await b.newPage({ viewport: { width: 390, height: 844 } });
+const auth = (fs.readFileSync(path.join(root, 'app', 'gate.js'), 'utf8').match(/hash: '([0-9a-f]{64})'/) || [])[1];
+await p.addInitScript((h) => { localStorage.setItem('kss-auth', h); }, auth);
 const errs = [];
 p.on('pageerror', (e) => errs.push(e.message));
 await p.goto(URL_ + '#home'); await p.waitForSelector('.hero', { timeout: 30000 });

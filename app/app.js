@@ -3136,8 +3136,11 @@
       </section>
       <section class="card"><h2>关于</h2>
         <p class="small">版本：<code>${esc(appVersion())}</code>${ARTIFACT ? '（claude.ai 网页版）' : STANDALONE ? '（主屏幕 App）' : ''}${!ARTIFACT && 'serviceWorker' in navigator ? ` · 离线可用：${navigator.serviceWorker.controller ? '✅' : '第一次打开后可用'}` : ''}</p>
+        <p class="small"><button class="btn small ghost logout">退出登录</button> <span class="muted">退出后需要重新输入账号密码</span></p>
         ${errCount() ? `<p class="small">最近有 ${errCount()} 条错误记录。<button class="btn small ghost copy-errs">复制错误信息</button><button class="btn small ghost clear-errs">清除记录</button></p>` : '<p class="small muted">没有错误记录。</p>'}
       </section>`);
+    const lo = $('.logout', el);
+    if (lo) lo.onclick = () => confirmInline(lo.closest('p'), '确定退出登录吗？学习进度不会丢。', '退出登录', () => { if (window.KSS_GATE) window.KSS_GATE.logout(); });
     const ce = $('.copy-errs', el); if (ce) ce.onclick = () => copyText(window.KSS_ERR.recent().join('\n\n────────\n\n'));
     const cl = $('.clear-errs', el); if (cl) cl.onclick = () => { try { localStorage.removeItem('kss-errors'); } catch (e) { /* ignore */ } viewSettings(); };
     const ui = $('.undo-import', el);

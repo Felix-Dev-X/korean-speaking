@@ -27,6 +27,7 @@ const parts = [
   `<style>\n${read('style.css')}\n</style>`,
   body,
   `<script>window.KSS_ENV = 'artifact'; window.KSS_VERSION = ${JSON.stringify(version)};</script>`,
+  `<script>\n${safeJs(read('gate.js'))}\n</script>`,
   `<script>\n${safeJs(read('errors.js'))}\n</script>`,
   ...FILES.map((f) => `<script>\n${safeJs(read('data/' + f + '.js'))}\n</script>`),
   `<script>\n${safeJs(read('app.js'))}\n</script>`,

@@ -36,6 +36,9 @@ export function artifactFile() {
   return 'file://' + f;
 }
 
+// 登录：测试默认已登录（把 gate.js 里的摘要写进 localStorage，和真登录后一样）
+export const AUTH = (fs.readFileSync(path.join(ROOT, 'app', 'gate.js'), 'utf8').match(/hash: '([0-9a-f]{64})'/) || [])[1];
+
 export function makeT(browser, base, name) {
   const failures = [], contexts = [];
   const t = {
@@ -48,6 +51,7 @@ export function makeT(browser, base, name) {
     async context(opts = {}) {
       const ctx = await browser.newContext(Object.assign({ viewport: { width: 375, height: 800 } }, opts.device ? devices[opts.device] : {}, opts.ctx || {}));
       contexts.push(ctx);
+      if (!opts.noAuth) await ctx.addInitScript((h) => { try { localStorage.setItem('kss-auth', h); } catch (e) { /* ignore */ } }, AUTH);
       await ctx.addInitScript((seed) => {
         // 测试里不真的发音
         if (window.speechSynthesis) window.speechSynthesis.speak = (u) => { (window.__said = window.__said || []).push(u.text); };
@@ -63,7 +67,7 @@ export function makeT(browser, base, name) {
       p.errs = [];
       p.on('pageerror', (e) => { p.errs.push(e.message); if (!opts.allowErrors) failures.push(`页面脚本错误（${hash}）：${e.message}`); });
       await p.goto((opts.url || base) + hash);
-      await p.waitForSelector('#app > div', { timeout: 15000 });
+      await p.waitForSelector(opts.noAuth ? '#gate, #app > div' : '#app > div', { timeout: 15000, state: 'attached' });
       return p;
     },
     async go(p, hash) { await p.evaluate((h) => { location.hash = h; }, hash); await p.waitForTimeout(120); },
